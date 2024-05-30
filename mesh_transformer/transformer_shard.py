@@ -1,6 +1,3 @@
-import gc
-import random
-import time
 from functools import partial
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P
@@ -18,8 +15,9 @@ class CausalTransformer:
         self.config = config
         optimizer = config["optimizer"]
 
-        dp = thread_resources.env.shape['dp']
-        mp = thread_resources.env.shape['mp']
+        # Calculate dp and mp
+        dp = jax.device_count() // config["cores_per_replica"]
+        mp = config["cores_per_replica"]
 
         mp_per_host = min(mp, 8)
 
@@ -46,6 +44,7 @@ class CausalTransformer:
         out_specs_move = P('mp')
 
         # Create the shard_map functions
+       
         self.init_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_init, out_specs=out_specs_init)(self.init)
         self.eval_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_eval, out_specs=out_specs_eval)(self.eval)
         self.train_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_train, out_specs=out_specs_train)(self.train)
@@ -83,7 +82,7 @@ class CausalTransformer:
         write_ckpt(self.state, path, shard)
 
     def load_ckpt(self, path):
-        self.state = read_ckpt(self.state, path, thread_resources.env.shape['mp'])
+        self.state = read_ckpt(self.state, path, config["cores_per_replica"])
 
     def train(self, sample):
         obs = jnp.transpose(sample["obs"], (1, 0, 2))
