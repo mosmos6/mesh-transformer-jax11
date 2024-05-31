@@ -55,7 +55,7 @@ class CausalTransformer:
         keys = jax.random.split(key, mp_per_host)
 
         example_shape = (max(dp // jax.process_count(), 1), config["seq"],)
-        x = jax.random.uniform(next(key), example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
+        x = jax.random.uniform(key, example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
 
         self.gen_length = 1
         self.state = self.init_shmap(keys, x)
