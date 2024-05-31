@@ -44,20 +44,21 @@ class CausalTransformer:
         out_specs_move = P('mp')
 
         # Create the shard_map functions
-       
         self.init_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_init, out_specs=out_specs_init)(self.init)
         self.eval_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_eval, out_specs=out_specs_eval)(self.eval)
         self.train_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_train, out_specs=out_specs_train)(self.train)
         self.generate_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_generate, out_specs=out_specs_generate)(self.generate)
         self.move_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_move, out_specs=out_specs_move)(lambda x, _: to_bf16(x))
 
+        # Generate PRNG keys
         key = hk.PRNGSequence(42)
+        keys = jnp.array([jax.random.split(next(key), 2) for _ in range(mp_per_host)])
 
         example_shape = (max(dp // jax.process_count(), 1), config["seq"],)
         x = jax.random.uniform(next(key), example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
 
         self.gen_length = 1
-        self.state = self.init_shmap(jnp.array(key.take(mp_per_host)), x)
+        self.state = self.init_shmap(keys, x)
 
         param_count = hk.data_structures.tree_size(self.state['params'])
         print(f"Total parameters: {param_count}")
@@ -103,4 +104,5 @@ class CausalTransformer:
         aux = jnp.zeros((batch_size, gen_length), dtype=jnp.uint32)
         self.gen_length = gen_length
         self.return_logits = return_logits
-        return self.generate_shmap(self.state, jnp.array(key.take(batch_size)), ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
+        keys = jnp.array([jax.random.split(next(key), 2) for _ in range(batch_size)])
+        return self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
