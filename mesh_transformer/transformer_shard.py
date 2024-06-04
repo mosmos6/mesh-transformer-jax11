@@ -50,13 +50,12 @@ class CausalTransformer:
         self.generate_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_generate, out_specs=out_specs_generate)(self.generate)
         self.move_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_move, out_specs=out_specs_move)(lambda x, _: to_bf16(x))
 
-        # Generate PRNG keys
-        key = jax.random.PRNGKey(42)
-        keys = jax.random.split(key, mp_per_host)
-        keys = keys.reshape(mp_per_host, 2)  # Ensure keys have shape (mp_per_host, 2)
+        # Generate PRNG keys using Haiku's key generator
+        key = hk.PRNGSequence(42)
+        keys = jnp.stack([next(key) for _ in range(mp_per_host)])
 
         example_shape = (max(dp // jax.process_count(), 1), config["seq"],)
-        x = jax.random.uniform(key, example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
+        x = jax.random.uniform(jax.random.PRNGKey(42), example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
 
         self.gen_length = 1
         self.state = self.init_shmap(keys, x)
@@ -100,10 +99,10 @@ class CausalTransformer:
         return self.eval_shmap(self.state, sample["obs"], sample["target"], ctx_length)
 
     def generate(self, ctx, ctx_length, gen_length, sampler_options, return_logits=False):
-        key = jax.random.PRNGKey(random.randint(0, 2 ** 60))
+        key = hk.PRNGSequence(random.randint(0, 2 ** 60))
         batch_size = ctx.shape[0]
         aux = jnp.zeros((batch_size, gen_length), dtype=jnp.uint32)
         self.gen_length = gen_length
         self.return_logits = return_logits
-        keys = jax.random.split(key, batch_size).reshape(batch_size, 2)  # Ensure keys have shape (batch_size, 2)
+        keys = jnp.stack([next(key) for _ in range(batch_size)])
         return self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
