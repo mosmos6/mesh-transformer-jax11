@@ -52,9 +52,7 @@ class CausalTransformer:
 
         # Generate PRNG keys
         key = jax.random.PRNGKey(42)
-        keys = jax.random.split(key, mp_per_host)
-        # Correct the reshaping to ensure the keys have the expected shape
-        keys = keys[:, None, :].reshape(mp_per_host, 2)
+        keys = jax.random.split(key, mp_per_host * 2).reshape(mp_per_host, 2)
 
         example_shape = (max(dp // jax.process_count(), 1), config["seq"],)
         x = jax.random.uniform(key, example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
