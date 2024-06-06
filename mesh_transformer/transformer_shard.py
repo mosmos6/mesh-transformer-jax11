@@ -52,7 +52,8 @@ class CausalTransformer:
 
         # Generate PRNG keys
         key = jax.random.PRNGKey(42)
-        keys = jax.random.split(key, mp_per_host * 2).reshape(mp_per_host, 2)
+        keys = jax.random.split(key, mp_per_host)
+        keys = jax.vmap(lambda k: jax.random.split(k, 2))(keys)
 
         example_shape = (max(dp // jax.process_count(), 1), config["seq"],)
         x = jax.random.uniform(key, example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
@@ -105,5 +106,5 @@ class CausalTransformer:
         self.gen_length = gen_length
         self.return_logits = return_logits
         keys = jax.random.split(key, batch_size)
-        keys = keys[:, None, :].reshape(batch_size, 2)
+        keys = jax.vmap(lambda k: jax.random.split(k, 2))(keys)
         return self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
