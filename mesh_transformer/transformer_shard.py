@@ -9,6 +9,104 @@ import optax
 
 # Assume these imports are defined properly
 from mesh_transformer.util import to_f32, to_bf16, global_norm
+from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, RelativePositionEmbs, ProjectionShard
+
+class CausalTransformerShard(hk.Module):
+    def __init__(self, config):
+        super().__init__()
+        heads = config["n_heads"]
+        shards = config["cores_per_replica"]
+        layer_count = config["layers"]
+
+        self.transformer_layers = []
+        self.heads = heads
+
+        self.heads_per_shard = heads // shards
+
+        self.embed = EmbeddingShard(config)
+
+        init_scale = 2. / layer_count
+
+        for i in range(layer_count):
+            self.transformer_layers.append(TransformerLayerShard(config, name=f"layer_{i}", init_scale=init_scale))
+
+        self.proj = ProjectionShard(config)
+
+        if config["pe"] == "t5":
+            self.rpe = RelativePositionEmbs()
+        else:
+            self.rpe = None
+
+    def eval(self, context, target, z_loss=0., mask=0.0):
+        input_len = context.shape[0]
+
+        if self.rpe is not None:
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
+        else:
+            attn_bias = 0
+
+        attn_bias += mask
+
+        x = hk.remat(self.embed)(context)
+
+        for l in self.transformer_layers:
+            x = x + hk.remat(l)(x, attn_bias)
+
+        return hk.remat(self.proj.loss)(x, target, z_loss)
+
+    def loss(self, ctx, tgt, z_loss=False, mask=0.0):
+        loss, correct = self.eval(ctx, tgt, float(z_loss), mask=mask)
+
+        return {
+            "loss": loss.mean(),
+            "last_loss": loss[-1].mean(),
+            "all_loss": loss,
+            "correct": correct
+        }
+
+    def generate_initial(self, context, length):
+        # slice last token off the context (we use that in generate_once to generate the first new token)
+        last = context[-1:]
+        context = context[:-1]
+
+        input_len = context.shape[0]
+
+        if self.rpe is not None:
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
+        else:
+            attn_bias = 0
+
+        x = self.embed(context)
+
+        states = []
+
+        for l in self.transformer_layers:
+            res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
+            x = x + res
+            states.append(layer_state)
+
+        return self.proj(x), (last.astype(jnp.uint32), states, hk.next_rng_key())
+
+    def generate_once(self, new_tok, state):
+        input_len = state[0]["v"].shape[0]
+
+        if self.rpe is not None:
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
+            attn_bias = attn_bias[:, -1:, :]
+        else:
+            attn_bias = 0
+
+        x = self.embed(new_tok)
+
+        new_states = []
+
+        for l, s in zip(self.transformer_layers, state):
+            res, layer_state = l.decode_once(s, x, attn_bias)
+            x = x + res
+            new_states.append(layer_state)
+
+        return self.proj(x), new_states
+
 
 class CausalTransformer:
     def __init__(self, config):
@@ -84,7 +182,7 @@ class CausalTransformer:
         write_ckpt(self.state, path, shard)
 
     def load_ckpt(self, path):
-        self.state = read_ckpt(self.state, path, config["cores_per_replica"])
+        self.state = read_ckpt(self.state, path, self.config["cores_per_replica"])
 
     def train(self, sample):
         obs = jnp.transpose(sample["obs"], (1, 0, 2))
