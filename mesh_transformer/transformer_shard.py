@@ -166,7 +166,13 @@ class CausalTransformer:
             return transformer.loss(x, y)
 
         param_init_fn = hk.transform(hk.experimental.optimize_rng_use(train_loss)).init
-        params = param_init_fn(key[0], x, x)
+
+        # Extract the first key, ensuring it has the correct shape
+        key = key[0]
+        key = jnp.reshape(key, (2,))
+
+        # Call param_init_fn with the correctly shaped key
+        params = param_init_fn(key, x, x)
 
         return {
             "params": ("early_cast" in self.config and to_bf16 or to_f32)(params),
@@ -199,5 +205,6 @@ class CausalTransformer:
         aux = jnp.zeros((batch_size, gen_length), dtype=jnp.uint32)
         self.gen_length = gen_length
         self.return_logits = return_logits
-        keys = jax.random.split(key, batch_size).reshape(batch_size, 2)
+        keys = jax.random.split(key, batch_size)
+        keys = jax.vmap(lambda k: jax.random.split(k, 2))(keys)
         return self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
