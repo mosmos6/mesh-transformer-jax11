@@ -166,7 +166,7 @@ class CausalTransformer:
 
         param_init_fn = hk.transform(hk.experimental.optimize_rng_use(train_loss)).init
         key = key.reshape((-1, 2))  # Ensure the key has the correct shape
-        params = param_init_fn(key[0], x, x)
+        params = param_init_fn(key, x, x)
 
         return {
             "params": ("early_cast" in self.config and to_bf16 or to_f32)(params),
