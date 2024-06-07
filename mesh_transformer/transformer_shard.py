@@ -165,7 +165,6 @@ class CausalTransformer:
             return transformer.loss(x, y)
 
         param_init_fn = hk.transform(hk.experimental.optimize_rng_use(train_loss)).init
-        key = key.reshape((-1, 2))  # Ensure the key has the correct shape
         params = param_init_fn(key, x, x)
 
         return {
