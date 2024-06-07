@@ -148,7 +148,7 @@ class CausalTransformer:
 
         # Generate PRNG keys
         key = jax.random.PRNGKey(42)
-        keys = jax.random.split(key, mp_per_host * 2).reshape(mp_per_host, 2)
+        keys = jax.random.split(key, mp).reshape(mp, 2)
 
         example_shape = (max(dp // jax.process_count(), 1), config["seq"],)
         x = jax.random.uniform(key, example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
@@ -165,6 +165,7 @@ class CausalTransformer:
             return transformer.loss(x, y)
 
         param_init_fn = hk.transform(hk.experimental.optimize_rng_use(train_loss)).init
+        key = key.reshape((-1, 2))  # Ensure the key has the correct shape
         params = param_init_fn(key[0], x, x)
 
         return {
