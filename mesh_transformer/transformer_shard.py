@@ -124,20 +124,20 @@ class CausalTransformer:
         mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
         # Define in_specs and out_specs for each function
-        in_specs_init = (P('mp'), P('dp'))
-        out_specs_init = P('mp')
+        in_specs_init = (P('dp', 'mp'), P('dp'))
+        out_specs_init = P('dp', 'mp')
 
-        in_specs_eval = (P('mp'), P('dp'), P('dp'), P('dp'))
-        out_specs_eval = P('mp', 'dp')
+        in_specs_eval = (P('dp', 'mp'), P('dp'), P('dp'), P('dp'))
+        out_specs_eval = P('dp', 'mp')
 
-        in_specs_train = (P('mp'), P('dp'), P('dp'))
-        out_specs_train = (P('dp'), P('dp'), P('dp'), P('dp'), P('mp'))
+        in_specs_train = (P('dp', 'mp'), P('dp'), P('dp'))
+        out_specs_train = (P('dp'), P('dp'), P('dp'), P('dp'), P('dp', 'mp'))
 
-        in_specs_generate = (P('mp'), P('dp'), P('dp'), P('dp'), P('dp'), P('dp'))
-        out_specs_generate = (P('mp', 'dp'), P('dp'))
+        in_specs_generate = (P('dp', 'mp'), P('dp'), P('dp'), P('dp'), P('dp'), P('dp'))
+        out_specs_generate = (P('dp', 'mp'), P('dp'))
 
-        in_specs_move = (P('mp'), P('dp'))
-        out_specs_move = P('mp')
+        in_specs_move = (P('dp', 'mp'), P('dp'))
+        out_specs_move = P('dp', 'mp')
 
         # Create the shard_map functions
         self.init_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_init, out_specs=out_specs_init)(self.init)
@@ -166,7 +166,7 @@ class CausalTransformer:
             return transformer.loss(x, y)
 
         param_init_fn = hk.transform(hk.experimental.optimize_rng_use(train_loss)).init
-        params = param_init_fn(key, x, x)
+        params = param_init_fn(key[0], x, x)
 
         return {
             "params": ("early_cast" in self.config and to_bf16 or to_f32)(params),
