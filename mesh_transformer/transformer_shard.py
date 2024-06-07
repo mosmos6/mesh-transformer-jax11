@@ -10,6 +10,7 @@ import optax
 # Assume these imports are defined properly
 from mesh_transformer.util import to_f32, to_bf16, global_norm
 from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, RelativePositionEmbs, ProjectionShard
+from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 
 class CausalTransformerShard(hk.Module):
     def __init__(self, config):
@@ -167,7 +168,7 @@ class CausalTransformer:
 
         param_init_fn = hk.transform(hk.experimental.optimize_rng_use(train_loss)).init
 
-        # Extract the first key, ensuring it has the correct shape
+        # Reshape key to have the correct shape
         key = key[0]
         key = jnp.reshape(key, (2,))
 
@@ -180,7 +181,7 @@ class CausalTransformer:
             "opt_state": self.config["optimizer"].init(params)
         }
 
-    def write_ckpt(self, path, shard):
+    def write_ckpt(self, path, shard=0):
         write_ckpt(self.state, path, shard)
 
     def load_ckpt(self, path):
