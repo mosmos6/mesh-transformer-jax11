@@ -6,7 +6,7 @@ from einops import rearrange, repeat
 
 from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
-from jax.experimental.maps import thread_resources
+from jax.experimental.shard_map import shard_map
 
 
 class ReplicatedLayerNorm(hk.Module):
@@ -20,10 +20,10 @@ class ReplicatedLayerNorm(hk.Module):
 
         param_shape = inputs.shape[-1:]
         scale = hk.get_parameter("scale", param_shape, inputs.dtype, init=jnp.ones)
-        scale = jax.lax.all_gather(scale, "shard")[0]
+        scale = jax.lax.all_gather(scale, "mp")[0]
 
         offset = hk.get_parameter("offset", param_shape, inputs.dtype, init=jnp.zeros)
-        offset = jax.lax.all_gather(offset, "shard")[0]
+        offset = jax.lax.all_gather(offset, "mp")[0]
 
         scale = jnp.broadcast_to(scale, inputs.shape)
         offset = jnp.broadcast_to(offset, inputs.shape)
@@ -47,12 +47,12 @@ class RMSNorm(hk.Module):
         normed = x / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-5)
 
         scale = hk.get_parameter('scale', param_shape, init=hk.initializers.Constant(x.shape[-1] ** 0.5))
-        scale = jax.lax.pmean(scale, "shard")
+        scale = jax.lax.pmean(scale, "mp")
         normed = normed * scale
 
         if self.offset:
             offset = hk.get_parameter('offset', param_shape, init=jnp.zeros)
-            offset = jax.lax.pmean(offset, "shard")
+            offset = jax.lax.pmean(offset, "mp")
             normed = normed + offset
 
         return normed
@@ -185,7 +185,7 @@ class EmbeddingShard(hk.Module):
         self.proj = hk.Linear(self.out_dim, w_init=hk.initializers.TruncatedNormal(stddev=1 / np.sqrt(in_dim)))
 
     def __call__(self, x, dtype=jnp.bfloat16):
-        shard_start_index = jax.lax.axis_index('shard') * self.in_dim_per_shard
+        shard_start_index = jax.lax.axis_index('mp') * self.in_dim_per_shard
 
         input_onehot = jax.nn.one_hot(x - shard_start_index, self.in_dim_per_shard)
         proj_out = self.proj(input_onehot)
@@ -193,7 +193,7 @@ class EmbeddingShard(hk.Module):
         proj_out = g_psum(proj_out)
 
         if self.positional_embeddings is not None:
-            all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'shard')
+            all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'mp')
 
             all_pos_embed = hk.Flatten()(jnp.transpose(all_pos_embed, (1, 0, 2)))
 
@@ -225,7 +225,6 @@ class EmbeddingShardV2(hk.Module):
         return proj_out
 
 
-# We actually combine the FF and dense in one layer (i.e. compute in parallel) to minimize all reduces
 class TransformerLayerShard(hk.Module):
     def __init__(self, config, name=None, init_scale=1.):
         super().__init__(name=name)
@@ -312,7 +311,6 @@ class TransformerLayerShard(hk.Module):
 
         return g_psum(attn_out + dense_out)
 
-    # iterate the decoding process by a single token
     def decode_once(self, decode_state, x, attn_bias):
         x = f_psum(x)
         x = self.norm(x)
@@ -321,7 +319,6 @@ class TransformerLayerShard(hk.Module):
 
         q, v, k = self.qvk_proj(x)
 
-        # add new kv to end
         v = jnp.concatenate((decode_state["v"], v), axis=0)[1:]
         k = jnp.concatenate((decode_state["k"], k), axis=0)[1:]
 
@@ -343,7 +340,6 @@ class TransformerLayerShard(hk.Module):
             "v": v
         }
 
-    # take in right aligned context tokens and generate an initial state
     def get_init_decode_state(self, x, given_length, attn_bias):
         x = f_psum(x)
         x = self.norm(x)
@@ -364,263 +360,3 @@ class TransformerLayerShard(hk.Module):
         dense_out = self.ff(x)
 
         return g_psum(attn_out + dense_out), {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
-
-
-# This new class combines the input and output projection into one matmul for better efficiency
-class TransformerLayerShardV2(hk.Module):
-    def __init__(self, config, name=None, init_scale=1.):
-        super().__init__(name=name)
-        self.dim = config["d_model"]
-        self.n_head = config["n_heads"]
-        self.d_head = config["d_head"]
-        self.d_rotary = config["pe_rotary_dims"]
-        self.mp_num = thread_resources.env.shape['mp']
-
-        self.norm = hk.LayerNorm(-1, True, True)
-        self.input_proj = hk.Linear(self.d_head * self.n_head * 3 + self.dim * 8)
-        self.output_proj = hk.Linear(self.dim,
-                                     w_init=hk.initializers.TruncatedNormal(stddev=init_scale / jnp.sqrt(self.dim)))
-
-    def self_attn(self, q, v, k, attn_bias):
-        k_rot = k[:, :, :, :self.d_rotary]
-        k_pass = k[:, :, :, self.d_rotary:]
-
-        q_rot = q[:, :, :, :self.d_rotary]
-        q_pass = q[:, :, :, self.d_rotary:]
-
-        sincos = fixed_pos_embedding(k_rot, seq_dim=1)
-        q_rot = apply_rotary_pos_emb_v2(q_rot, sincos)
-        k_rot = apply_rotary_pos_emb_v2(k_rot, sincos)
-        q_rot = maybe_shard(q_rot, P("dp", None, "mp", None))
-        k_rot = maybe_shard(k_rot, P("dp", None, "mp", None))
-
-        k = jnp.concatenate([k_rot, k_pass], axis=-1)
-        q = jnp.concatenate([q_rot, q_pass], axis=-1)
-
-        k = maybe_shard(k, P("dp", None, "mp", None))
-        q = maybe_shard(q, P("dp", None, "mp", None))
-
-        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
-
-        attention_logits = maybe_shard(attention_logits, P("dp", "mp", None, None))
-
-        sqrt_key_size = np.sqrt(self.d_head).astype(k.dtype)
-        attention_logits = attention_logits / sqrt_key_size
-
-        attention_logits += attn_bias
-        attention_logits = maybe_shard(attention_logits, P("dp", "mp", None, None))
-
-        attention_weights = jax.nn.softmax(attention_logits)
-        attention_weights = maybe_shard(attention_weights, P("dp", "mp", None, None))
-
-        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v)
-
-        attention_vec = maybe_shard(attention_vec, P("dp", None, "mp", None))
-        sharded_attn_vec = attention_vec.reshape(attention_vec.shape[:2] + (self.mp_num, self.n_head//self.mp_num, -1))
-        sharded_attn_vec = maybe_shard(sharded_attn_vec, P("dp", None, "mp", None, None))
-
-        attention_vec = attention_vec.reshape(sharded_attn_vec.shape[:2] + (self.mp_num, -1))
-        return maybe_shard(attention_vec, P("dp", None, "mp", None))
-
-    # input: [batch, seq, dim]
-    # output: [batch, seq, n_head, d_head]
-    def head_split(self, x):
-        reshaped = x.reshape(x.shape[:-1] + (self.n_head//self.mp_num, self.d_head))
-        reshaped = reshaped.reshape(x.shape[:-2] + (-1, ) + x.shape[-1:])
-
-        # return reshaped
-        return maybe_shard(reshaped, P("dp", None, "mp", None))
-
-    def input(self, x):
-        # [batch, seq, dim]
-        projected = self.input_proj(x)
-
-        # [batch, seq, mp, dim//mp]
-        projected = maybe_shard(projected, P("dp", None, "mp"))
-        mp_split = jnp.reshape(projected, projected.shape[:-1] + (self.mp_num, -1))
-        mp_split = maybe_shard(mp_split, P("dp", None, "mp", None))
-
-        local_dim = self.d_head * self.n_head // self.mp_num
-
-        q, v, k, ff = jnp.split(mp_split, [local_dim, local_dim * 2, local_dim * 3], axis=-1)
-
-        q = self.head_split(q)
-        v = self.head_split(v)
-        k = self.head_split(k)
-
-        return q, v, k, ff
-
-    def output(self, *x):
-        out = jnp.concatenate(x, axis=-1)
-        out = maybe_shard(out, P("dp", None, "mp", None))
-
-        out = out.reshape(x[0].shape[:-2] + (-1,))
-        out_shard = maybe_shard(out, P("dp", None, "mp"))
-
-        return self.output_proj(out_shard)
-
-    def __call__(self, x, attn_bias):
-
-        x = self.norm(x)
-
-        q, v, k, ff = self.input(x)
-
-        # head_print("x.shape", x.shape)
-        # head_print("attn_bias.shape", attn_bias.shape)
-
-        seq_len = x.shape[1]
-        causal_mask = np.tril(np.ones((seq_len, seq_len)))[None, :, :]
-        bias = -1e10 * (1. - causal_mask)
-
-        # head_print("bias.shape", bias.shape)
-
-        bias += attn_bias
-
-        attn_out = self.self_attn(q, v, k, bias)
-        ff_out = self.glu(ff)
-
-        return self.output(attn_out, ff_out)
-
-    # [batch, seq, mp, dim*2//mp]
-    def glu(self, x):
-        out, gate = jnp.split(x, 2, axis=-1)
-
-        return out * jax.nn.gelu(gate)
-
-    # iterate the decoding process by a single token
-    def decode_once(self, decode_state, x, attn_bias):
-        x = self.norm(x)
-
-        assert x.shape[0] == 1
-
-        q, v, k, ff = self.input(x)
-
-        # add new kv to end
-        v = jnp.concatenate((decode_state["v"], v), axis=1)[1:]
-        k = jnp.concatenate((decode_state["k"], k), axis=1)[1:]
-
-        tokens_decoded = decode_state["tokens_decoded"] + 1
-        length = v.shape[1]
-
-        masked_tokens = length - tokens_decoded
-
-        attention_mask = jnp.arange(0, length) < masked_tokens
-        bias = (-1e10 * attention_mask)
-        bias += attn_bias
-
-        attn_out = self.self_attn(q, v, k, bias)
-        ff_out = self.glu(ff)
-
-        return self.output(attn_out, ff_out), {
-            "tokens_decoded": tokens_decoded,
-            "k": k,
-            "v": v
-        }
-
-    # take in right aligned context tokens and generate an initial state
-    def get_init_decode_state(self, x, given_length, attn_bias):
-        x = self.norm(x)
-
-        q, v, k, ff = self.input(x)
-
-        full_length = x.shape[1]
-        masked_tokens = full_length - given_length
-
-        causal_mask = np.tril(np.ones((full_length, full_length)))
-
-        bias = -1e10 * (1. - causal_mask)  # regular AR masking
-        bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)  # mask out zero tokens before context starts
-        bias += attn_bias  # finally add attn bias for rpe
-
-        attn_out = self.self_attn(q, v, k, bias)
-        ff_out = self.glu(ff)
-
-        return self.output(attn_out, ff_out), {
-            "tokens_decoded": given_length.astype(jnp.uint32),
-            "k": k,
-            "v": v,
-        }
-
-
-class ProjectionShard(hk.Module):
-    def __init__(self, config, name=None):
-        super().__init__(name=name)
-        out_dim = config["n_vocab"]
-        shards = config["cores_per_replica"]
-        norm = getnorm(config["norm"])
-
-        assert out_dim % shards == 0
-
-        self.dim = out_dim
-        self.dim_per_shard = out_dim // shards
-
-        self.norm = norm
-
-        self.proj = hk.Linear(self.dim_per_shard)
-
-    def __call__(self, x):
-        x = self.norm(x)
-        proj = self.proj(x)
-
-        all_proj = jax.lax.all_gather(proj, 'shard')
-
-        return hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
-
-    def loss(self, x, targets, z_loss=1):
-        x = f_psum(x)
-        x = self.norm(x)
-        logits = self.proj(x)
-
-        shard_start_index = jax.lax.axis_index('shard') * self.dim_per_shard
-        global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "shard")
-        logits -= jax.lax.stop_gradient(global_max)
-
-        gt_onehot = jax.nn.one_hot(targets - shard_start_index, self.dim_per_shard)
-        predicted_logits = jnp.sum(jnp.multiply(gt_onehot, logits), axis=-1)
-        predicted_logits = g_psum(predicted_logits)
-
-        exp_logits = jnp.exp(logits)
-
-        sum_exp_logits = exp_logits.sum(axis=-1)
-        sum_exp_logits = g_psum(sum_exp_logits)
-
-        loss = jnp.log(sum_exp_logits) - predicted_logits
-
-        loss += (1e-4 * jnp.square(jnp.log(sum_exp_logits)) * z_loss).mean()
-
-        correct = (0.0 == predicted_logits)
-
-        return loss, correct
-
-
-class Projection(hk.Module):
-    def __init__(self, config, name=None):
-        super().__init__(name=name)
-        out_dim = config["n_vocab"]
-
-        self.dim = out_dim
-        self.norm = hk.LayerNorm(-1, True, True)
-
-        self.proj = hk.Linear(self.dim)
-
-    def __call__(self, x):
-        x = self.norm(x)
-        return self.proj(x)
-
-    def loss(self, x, targets, z_loss=1):
-        x = self.norm(x)
-        logits = self.proj(x)
-
-        logits -= logits.max(-1, keepdims=True)
-
-        gt_onehot = jax.nn.one_hot(targets, self.dim)
-        predicted_logits = jnp.sum(jnp.multiply(gt_onehot, logits), axis=-1)
-        exp_logits = jnp.exp(logits)
-
-        sum_exp_logits = exp_logits.sum(axis=-1)
-
-        loss = jnp.log(sum_exp_logits) - predicted_logits
-
-        loss += (1e-4 * jnp.square(jnp.log(sum_exp_logits)) * z_loss).mean()
-        correct = (0.0 == predicted_logits)
-        return loss, correct
