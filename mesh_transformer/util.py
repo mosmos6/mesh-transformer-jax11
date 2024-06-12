@@ -30,7 +30,7 @@ def gpt3_schedule(warmup_steps,
 def global_norm(updates, use_psum=True):
     pre_sqrt = sum([jnp.sum(jnp.square(x)) for x in jax.tree_leaves(updates)])
     if use_psum:
-        pre_sqrt = jax.lax.psum(pre_sqrt, "shard")
+        pre_sqrt = jax.lax.psum(pre_sqrt, "mp")
     return jnp.sqrt(pre_sqrt)
 
 
@@ -108,7 +108,7 @@ def f_psum_fwd(x):
 
 
 def f_psum_bwd(_, g):
-    return jax.lax.psum(g, "shard"),
+    return jax.lax.psum(g, "mp"),
 
 
 f_psum.defvjp(f_psum_fwd, f_psum_bwd)
@@ -125,7 +125,7 @@ def f_pmean_fwd(x):
 
 
 def f_pmean_bwd(_, g):
-    return jax.lax.pmean(g, "shard"),
+    return jax.lax.pmean(g, "mp"),
 
 
 f_pmean.defvjp(f_pmean_fwd, f_pmean_bwd)
@@ -134,7 +134,7 @@ f_pmean.defvjp(f_pmean_fwd, f_pmean_bwd)
 # psum in forward pass, identity in backward
 @jax.custom_vjp
 def g_psum(x):
-    return jax.lax.psum(x, "shard")
+    return jax.lax.psum(x, "mp")
 
 
 def g_psum_fwd(x):
@@ -182,6 +182,6 @@ def head_print(*args, **kwargs):
 if __name__ == "__main__":
    sch = gpt3_schedule(1_000, 20_000, 1e-4, 1e-5)
 
-   for i in range(150):
+   for i in range 150:
       i = i * 200
       print(i, sch(i))
