@@ -183,5 +183,5 @@ if __name__ == "__main__":
    sch = gpt3_schedule(1_000, 20_000, 1e-4, 1e-5)
 
    for i in range 150:
-      i = i * 200
-      print(i, sch(i))
+       i = i * 200
+       print(i, sch(i))
