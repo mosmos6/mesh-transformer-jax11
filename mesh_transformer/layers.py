@@ -135,8 +135,8 @@ def fixed_pos_embedding(x, seq_dim=0):
 
 
 def rotate_every_two(x):
-    x1 = x[:, :, ::2]
-    x2 = x[:, :, 1::2]
+    x1 = x[:, :, :, ::2]
+    x2 = x[:, :, :, 1::2]
 
     x = jnp.stack((-x2, x1), axis=-1)
 
@@ -268,22 +268,23 @@ class TransformerLayerShard(hk.Module):
         self.dense_proj_o = hk.Linear(self.dim,
                                       w_init=hk.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
 
-    def self_attn(self, q, v, k, attn_bias):
+        def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
-            k_rot = k[:, :, :self.pe_rotary_dims]
-            k_pass = k[:, :, self.pe_rotary_dims:]
+            print(f"self_attn: q.shape = {q.shape}, k.shape = {k.shape}")
+            k_rot = k[:, :, :, :self.pe_rotary_dims]
+            k_pass = k[:, :, :, self.pe_rotary_dims:]
 
-            q_rot = q[:, :, :self.pe_rotary_dims]
-            q_pass = q[:, :, self.pe_rotary_dims:]
+            q_rot = q[:, :, :, :self.pe_rotary_dims]
+            q_pass = q[:, :, :, self.pe_rotary_dims:]
 
-            sincos = fixed_pos_embedding(k_rot)
+            sincos = fixed_pos_embedding(k_rot.shape[0], self.pe_rotary_dims)
             q_rot = apply_rotary_pos_emb(q_rot, sincos)
             k_rot = apply_rotary_pos_emb(k_rot, sincos)
 
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
-        attention_logits = jnp.einsum("thd,Thd->htT", q, k)
+        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
 
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
@@ -291,10 +292,10 @@ class TransformerLayerShard(hk.Module):
         attention_logits += attn_bias
 
         attention_weights = jax.nn.softmax(attention_logits)
-        attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
 
         return self.o(attention_vec)
-
+        
     def ff(self, x):
         dense_proj = self.dense_proj(x)
         dense_proj = jax.nn.gelu(dense_proj)
