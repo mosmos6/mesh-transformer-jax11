@@ -268,7 +268,7 @@ class TransformerLayerShard(hk.Module):
         self.dense_proj_o = hk.Linear(self.dim,
                                       w_init=hk.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
 
-        def self_attn(self, q, v, k, attn_bias):
+    def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
             print(f"self_attn: q.shape = {q.shape}, k.shape = {k.shape}")
             k_rot = k[:, :, :, :self.pe_rotary_dims]
