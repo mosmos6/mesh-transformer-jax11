@@ -151,7 +151,10 @@ def apply_rotary_pos_emb(x, sincos):
     sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)[:seq_len, :, :, :]
     cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)[:seq_len, :, :, :]
 
+    print(f"apply_rotary_pos_emb: sin.shape = {sin.shape}, cos.shape = {cos.shape}")
+    
     return (x * cos) + (rotate_every_two(x) * sin)
+
 
 
 def rotate_every_two_v2(x):
