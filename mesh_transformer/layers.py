@@ -145,15 +145,10 @@ def rotate_every_two(x):
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
-    seq_len = x.shape[0]
-    num_heads = x.shape[1]
-    head_dim = x.shape[-1]
+    seq_len, num_heads, head_dim = x.shape
 
-    sin = repeat(sin, 'n d -> b n (d j)', b=x.shape[1], j=2)[:seq_len, :, :]
-    cos = repeat(cos, 'n d -> b n (d j)', b=x.shape[1], j=2)[:seq_len, :, :]
-
-    sin = sin.reshape(1, seq_len, num_heads, head_dim)
-    cos = cos.reshape(1, seq_len, num_heads, head_dim)
+    sin = repeat(sin, 'n d -> n b d', b=num_heads)[:seq_len, :, :]
+    cos = repeat(cos, 'n d -> n b d', b=num_heads)[:seq_len, :, :]
 
     return (x * cos) + (rotate_every_two(x) * sin)
 
