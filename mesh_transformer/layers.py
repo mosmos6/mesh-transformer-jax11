@@ -125,13 +125,13 @@ class RelativePositionEmbs(hk.Module):
         return values
 
 
-def fixed_pos_embedding(x, seq_dim=0):
-    dim = x.shape[-1]
+def fixed_pos_embedding(seq_len, dim):
     inv_freq = 1. / (10000 ** (np.arange(0, dim, 2) / dim))
+    position = np.arange(0, seq_len, dtype=np.float32)
+    sinusoid_inp = np.einsum('i,j->ij', position, inv_freq)
+    emb = np.concatenate((np.sin(sinusoid_inp), np.cos(sinusoid_inp)), axis=-1)
+    return jnp.array(emb[:, None, :], dtype=jnp.float32), jnp.array(emb[:, None, :], dtype=jnp.float32)
 
-    sinusoid_inp = np.einsum('i , j -> i j', np.arange(x.shape[seq_dim]), inv_freq)
-
-    return np.sin(sinusoid_inp), np.cos(sinusoid_inp)
 
 
 def rotate_every_two(x):
