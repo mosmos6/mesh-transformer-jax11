@@ -143,20 +143,19 @@ def rotate_every_two(x):
     return rearrange(x, '... d j -> ... (d j)')
 
 
+
+
 def apply_rotary_pos_emb(x, sincos):
-    print(f"apply_rotary_pos_emb: x.shape = {x.shape}")
     sin, cos = sincos
     seq_len, batch_size, num_heads, head_dim = x.shape
 
-    sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)[:seq_len, :, :, :]
-    cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)[:seq_len, :, :, :]
+    sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)
+    cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)
 
     print(f"apply_rotary_pos_emb: sin.shape = {sin.shape}, cos.shape = {cos.shape}")
 
-    assert sin.shape == x.shape, f"Sin shape {sin.shape} does not match x shape {x.shape}"
-    assert cos.shape == x.shape, f"Cos shape {cos.shape} does not match x shape {x.shape}"
-
     return (x * cos) + (rotate_every_two(x) * sin)
+
 
 
 
