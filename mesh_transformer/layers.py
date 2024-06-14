@@ -577,7 +577,7 @@ class ProjectionShard(hk.Module):
         x = self.norm(x)
         proj = self.proj(x)
 
-        all_proj = jax.lax.all_gather(proj, 'shard')
+        all_proj = jax.lax.all_gather(proj, 'mp')
 
         return hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
 
@@ -587,7 +587,7 @@ class ProjectionShard(hk.Module):
         logits = self.proj(x)
 
         shard_start_index = jax.lax.axis_index('shard') * self.dim_per_shard
-        global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "shard")
+        global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "mp")
         logits -= jax.lax.stop_gradient(global_max)
 
         gt_onehot = jax.nn.one_hot(targets - shard_start_index, self.dim_per_shard)
