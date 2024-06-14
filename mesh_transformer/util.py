@@ -148,7 +148,7 @@ def g_psum_bwd(_, g):
 g_psum.defvjp(g_psum_fwd, g_psum_bwd)
 
 
-def shard_axis(x, axis_size, axis_name):
+def shard_axis(x, axis_size, axis_name='mp'):
     # in_shape = x.shape
     assert x.shape[0] % axis_size == 0
 
@@ -162,7 +162,7 @@ def shard_axis(x, axis_size, axis_name):
     return x
 
 
-def unshard_axis(x, axis_name):
+def unshard_axis(x, axis_name='mp'):
     # in_shape = x.shape
     x = jax.lax.all_gather(x, axis_name)
 
