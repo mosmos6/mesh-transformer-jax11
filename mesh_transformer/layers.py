@@ -586,7 +586,7 @@ class ProjectionShard(hk.Module):
         x = self.norm(x)
         logits = self.proj(x)
 
-        shard_start_index = jax.lax.axis_index('shard') * self.dim_per_shard
+        shard_start_index = jax.lax.axis_index('mp') * self.dim_per_shard
         global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "mp")
         logits -= jax.lax.stop_gradient(global_max)
 
