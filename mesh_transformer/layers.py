@@ -277,7 +277,9 @@ class TransformerLayerShard(hk.Module):
             q_rot = q[:, :, :, :self.pe_rotary_dims]
             q_pass = q[:, :, :, self.pe_rotary_dims:]
 
-            sincos = fixed_pos_embedding(k_rot.shape[0], self.pe_rotary_dims)
+            seq_len, batch_size, num_heads, _ = k_rot.shape
+
+            sincos = fixed_pos_embedding(seq_len, self.pe_rotary_dims)
             q_rot = apply_rotary_pos_emb(q_rot, sincos)
             k_rot = apply_rotary_pos_emb(k_rot, sincos)
 
@@ -295,7 +297,7 @@ class TransformerLayerShard(hk.Module):
         attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
 
         return self.o(attention_vec)
-        
+
     def ff(self, x):
         dense_proj = self.dense_proj(x)
         dense_proj = jax.nn.gelu(dense_proj)
@@ -365,14 +367,15 @@ class TransformerLayerShard(hk.Module):
         seq_len = x.shape[0]
         causal_mask = np.tril(np.ones((seq_len, seq_len)))
 
-        bias = -1e10 * (1. - causal_mask)  # regular AR masking
-        bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)  # mask out zero tokens before context starts
-        bias += attn_bias  # finally add attn bias for rpe
+        bias = -1e10 * (1. - causal_mask)
+        bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)
+        bias += attn_bias
 
         attn_out = self.self_attn(q, v, k, bias)
         dense_out = self.ff(x)
 
         return g_psum(attn_out + dense_out), {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
+
 
 # This new class combines the input and output projection into one matmul for better efficiency
 class TransformerLayerShardV2(hk.Module):
