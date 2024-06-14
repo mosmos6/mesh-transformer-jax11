@@ -129,8 +129,11 @@ def fixed_pos_embedding(seq_len, dim):
     inv_freq = 1. / (10000 ** (np.arange(0, dim, 2) / dim))
     position = np.arange(0, seq_len, dtype=np.float32)
     sinusoid_inp = np.einsum('i,j->ij', position, inv_freq)
-    emb = np.concatenate((np.sin(sinusoid_inp), np.cos(sinusoid_inp)), axis=-1)
-    return jnp.array(emb[:, :dim//2], dtype=jnp.float32), jnp.array(emb[:, :dim//2], dtype=jnp.float32)
+    sin = np.sin(sinusoid_inp)
+    cos = np.cos(sinusoid_inp)
+    sin = np.concatenate([sin, sin], axis=-1)
+    cos = np.concatenate([cos, cos], axis=-1)
+    return jnp.array(sin, dtype=jnp.float32), jnp.array(cos, dtype=jnp.float32)
 
 
 
@@ -150,10 +153,10 @@ def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
     seq_len, batch_size, num_heads, head_dim = x.shape
 
-    sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)
-    cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)
+    sin = repeat(sin, 'n d -> n b h (d j)', b=batch_size, h=num_heads, j=2)
+    cos = repeat(cos, 'n d -> n b h (d j)', b=batch_size, h=num_heads, j=2)
 
-    print(f"apply_rotary_pos_emb: sin.shape = {sin.shape}, cos.shape = {cos.shape}")
+    print(f"apply_rotary_pos_emb: x.shape = {x.shape}, sin.shape = {sin.shape}, cos.shape = {cos.shape}")
 
     return (x * cos) + (rotate_every_two(x) * sin)
 
