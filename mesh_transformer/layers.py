@@ -130,7 +130,8 @@ def fixed_pos_embedding(seq_len, dim):
     position = np.arange(0, seq_len, dtype=np.float32)
     sinusoid_inp = np.einsum('i,j->ij', position, inv_freq)
     emb = np.concatenate((np.sin(sinusoid_inp), np.cos(sinusoid_inp)), axis=-1)
-    return jnp.array(emb[:, None, :], dtype=jnp.float32), jnp.array(emb[:, None, :], dtype=jnp.float32)
+    return jnp.array(emb[:, :dim//2], dtype=jnp.float32), jnp.array(emb[:, :dim//2], dtype=jnp.float32)
+
 
 
 
