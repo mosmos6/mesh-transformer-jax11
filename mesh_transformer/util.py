@@ -149,17 +149,16 @@ g_psum.defvjp(g_psum_fwd, g_psum_bwd)
 
 
 def shard_axis(x, axis_size, axis_name='mp'):
-    # in_shape = x.shape
     assert x.shape[0] % axis_size == 0
 
     x = x.reshape((axis_size, -1) + x.shape[1:])
+    print(f"Before axis_index: x.shape = {x.shape}, axis_name = {axis_name}")
 
     x = x[jax.lax.axis_index(axis_name)]
-    # print("shard out", x.shape, "in", in_shape)
-
-    # assert np.prod(x.shape) * axis_size == np.prod(in_shape)
+    print(f"After axis_index: x.shape = {x.shape}, axis_name = {axis_name}")
 
     return x
+
 
 
 def unshard_axis(x, axis_name='mp'):
