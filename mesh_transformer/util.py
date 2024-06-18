@@ -163,14 +163,15 @@ def shard_axis(x, axis_size, axis_name='mp'):
 
 
 def unshard_axis(x, axis_name='mp'):
-    # in_shape = x.shape
+    print(f"Before all_gather: x.shape = {x.shape}, axis_name = {axis_name}")
     x = jax.lax.all_gather(x, axis_name)
+    print(f"After all_gather: x.shape = {x.shape}, axis_name = {axis_name}")
 
     x = x.reshape((-1, ) + x.shape[2:])
+    print(f"After reshape: x.shape = {x.shape}, axis_name = {axis_name}")
 
-    # assert x.shape[-1] == 4096
-    # print("unshard out", x.shape, "in", in_shape)
     return x
+
 
 
 # print but only on the first node
