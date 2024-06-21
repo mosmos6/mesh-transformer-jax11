@@ -6,6 +6,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import optax
+import numpy as np
 
 # Assume these imports are defined properly
 from mesh_transformer.util import to_f32, to_bf16, global_norm
