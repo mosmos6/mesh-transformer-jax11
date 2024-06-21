@@ -123,7 +123,7 @@ class CausalTransformer:
 
         # Define the device mesh
         devices = jax.devices()
-        mesh_shape = (dp, mp)
+        mesh_shape = (mp, dp)
         reshaped_devices = np.array(devices).reshape(mesh_shape)
         mesh = Mesh(reshaped_devices, axis_names=('dp', 'mp'))
 
