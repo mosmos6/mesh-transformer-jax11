@@ -121,8 +121,10 @@ class CausalTransformer:
         assert mp == config["cores_per_replica"]
 
         # Define the device mesh
-        devices = mesh_utils.create_device_mesh((dp, mp))
-        mesh = Mesh(devices, axis_names=('dp', 'mp'))
+        devices = jax.devices()
+        mesh_shape = (dp, mp)
+        reshaped_devices = np.array(devices).reshape(mesh_shape)
+        mesh = Mesh(reshaped_devices, axis_names=('dp', 'mp'))
 
         # Define in_specs and out_specs for each function
         in_specs_init = (P('dp', 'mp'), P('dp'))
