@@ -1,12 +1,11 @@
 from functools import partial
-from jax.experimental import mesh_utils
-from jax.sharding import Mesh, PartitionSpec as P
-from jax.experimental.shard_map import shard_map
-import haiku as hk
 import jax
 import jax.numpy as jnp
+from jax.sharding import Mesh, PartitionSpec as P
+from jax.experimental import mesh_utils
+from jax.experimental.shard_map import shard_map
+import haiku as hk
 import optax
-import numpy as np
 
 # Assume these imports are defined properly
 from mesh_transformer.util import to_f32, to_bf16, global_norm
@@ -122,10 +121,8 @@ class CausalTransformer:
         assert mp == config["cores_per_replica"]
 
         # Define the device mesh
-        devices = jax.devices()
-        mesh_shape = (dp, mp)
-        reshaped_devices = np.array(devices).reshape(mesh_shape)
-        mesh = Mesh(reshaped_devices, axis_names=('dp', 'mp'))
+        devices = mesh_utils.create_device_mesh((dp, mp))
+        self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
         # Define in_specs and out_specs for each function
         in_specs_init = (P('dp', 'mp'), P('dp'))
@@ -144,11 +141,11 @@ class CausalTransformer:
         out_specs_move = P('dp', 'mp')
 
         # Create the shard_map functions
-        self.init_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_init, out_specs=out_specs_init)(self.init)
-        self.eval_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_eval, out_specs=out_specs_eval)(self.eval)
-        self.train_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_train, out_specs=out_specs_train)(self.train)
-        self.generate_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_generate, out_specs=out_specs_generate)(self.generate)
-        self.move_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_move, out_specs=out_specs_move)(lambda x, _: to_bf16(x))
+        self.init_shmap = partial(shard_map, mesh=self.mesh, in_specs=in_specs_init, out_specs=out_specs_init)(self.init)
+        self.eval_shmap = partial(shard_map, mesh=self.mesh, in_specs=in_specs_eval, out_specs=out_specs_eval)(self.eval)
+        self.train_shmap = partial(shard_map, mesh=self.mesh, in_specs=in_specs_train, out_specs=out_specs_train)(self.train)
+        self.generate_shmap = partial(shard_map, mesh=self.mesh, in_specs=in_specs_generate, out_specs=out_specs_generate)(self.generate)
+        self.move_shmap = partial(shard_map, mesh=self.mesh, in_specs=in_specs_move, out_specs=out_specs_move)(lambda x, _: to_bf16(x))
 
         # Generate PRNG keys
         key = jax.random.PRNGKey(42)
@@ -193,7 +190,8 @@ class CausalTransformer:
     def train(self, sample):
         obs = jnp.transpose(sample["obs"], (1, 0, 2))
         target = jnp.transpose(sample["target"], (1, 0, 2))
-        loss, last_loss, grad_norm, grad_norm_micro, self.state = self.train_shmap(self.state, obs, target)
+        with self.mesh:
+            loss, last_loss, grad_norm, grad_norm_micro, self.state = self.train_shmap(self.state, obs, target)
         return np.array(loss).mean(), np.array(last_loss).mean(), np.array(grad_norm).mean(), np.array(grad_norm_micro).mean()
 
     def eval(self, sample):
@@ -201,7 +199,8 @@ class CausalTransformer:
             ctx_length = sample["ctx_length"]
         else:
             ctx_length = np.array([len(sample["obs"][0])] * len(sample["obs"]))
-        return self.eval_shmap(self.state, sample["obs"], sample["target"], ctx_length)
+        with self.mesh:
+            return self.eval_shmap(self.state, sample["obs"], sample["target"], ctx_length)
 
     def generate(self, ctx, ctx_length, gen_length, sampler_options, return_logits=False):
         key = jax.random.PRNGKey(random.randint(0, 2 ** 60))
@@ -211,4 +210,5 @@ class CausalTransformer:
         self.return_logits = return_logits
         keys = jax.random.split(key, batch_size)
         keys = jax.vmap(lambda k: jax.random.split(k, 2))(keys)
-        return self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
+        with self.mesh:
+            return self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
