@@ -183,7 +183,8 @@ class CausalTransformer:
         }
 
     def write_ckpt(self, path, shard=0):
-        write_ckpt(self.state, path, shard)
+        with self.mesh:
+            write_ckpt(self.state, path, shard)
 
     def load_ckpt(self, path):
         with self.mesh:
