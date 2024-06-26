@@ -148,7 +148,7 @@ def g_psum_bwd(_, g):
 g_psum.defvjp(g_psum_fwd, g_psum_bwd)
 
 
-def shard_axis(x, axis_size, axis_name='mp'):
+def shard_axis(x, axis_size, axis_name='dp'):
     assert x.shape[0] % axis_size == 0
 
     x = x.reshape((axis_size, -1) + x.shape[1:])
