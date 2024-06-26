@@ -156,7 +156,8 @@ class CausalTransformer:
         x = jax.random.uniform(key, example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
 
         self.gen_length = 1
-        self.state = self.init_shmap(keys, x)
+        with self.mesh:
+            self.state = self.init_shmap(keys, x)
 
         param_count = hk.data_structures.tree_size(self.state['params'])
         print(f"Total parameters: {param_count}")
@@ -185,7 +186,8 @@ class CausalTransformer:
         write_ckpt(self.state, path, shard)
 
     def load_ckpt(self, path):
-        self.state = read_ckpt(self.state, path, self.config["cores_per_replica"])
+        with self.mesh:
+            self.state = read_ckpt(self.state, path, self.config["cores_per_replica"])
 
     def train(self, sample):
         obs = jnp.transpose(sample["obs"], (1, 0, 2))
