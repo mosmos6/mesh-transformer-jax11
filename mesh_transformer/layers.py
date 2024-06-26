@@ -47,12 +47,12 @@ class RMSNorm(hk.Module):
         normed = x / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-5)
 
         scale = hk.get_parameter('scale', param_shape, init=hk.initializers.Constant(x.shape[-1] ** 0.5))
-        scale = jax.lax.pmean(scale, "mp")
+        scale = jax.lax.pmean(scale, "dp")
         normed = normed * scale
 
         if self.offset:
             offset = hk.get_parameter('offset', param_shape, init=jnp.zeros)
-            offset = jax.lax.pmean(offset, "mp")
+            offset = jax.lax.pmean(offset, "dp")
             normed = normed + offset
 
         return normed
