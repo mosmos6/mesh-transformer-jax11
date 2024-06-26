@@ -577,7 +577,7 @@ class ProjectionShard(hk.Module):
         x = self.norm(x)
         proj = self.proj(x)
 
-        all_proj = jax.lax.all_gather(proj, 'mp')
+        all_proj = jax.lax.all_gather(proj, 'dp')
 
         return hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
 
