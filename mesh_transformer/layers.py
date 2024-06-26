@@ -20,10 +20,10 @@ class ReplicatedLayerNorm(hk.Module):
 
         param_shape = inputs.shape[-1:]
         scale = hk.get_parameter("scale", param_shape, inputs.dtype, init=jnp.ones)
-        scale = jax.lax.all_gather(scale, "dp")[0]
+        scale = jax.lax.all_gather(scale, "mp")[0]
 
         offset = hk.get_parameter("offset", param_shape, inputs.dtype, init=jnp.zeros)
-        offset = jax.lax.all_gather(offset, "dp")[0]
+        offset = jax.lax.all_gather(offset, "mp")[0]
 
         scale = jnp.broadcast_to(scale, inputs.shape)
         offset = jnp.broadcast_to(offset, inputs.shape)
@@ -47,12 +47,12 @@ class RMSNorm(hk.Module):
         normed = x / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-5)
 
         scale = hk.get_parameter('scale', param_shape, init=hk.initializers.Constant(x.shape[-1] ** 0.5))
-        scale = jax.lax.pmean(scale, "dp")
+        scale = jax.lax.pmean(scale, "mp")
         normed = normed * scale
 
         if self.offset:
             offset = hk.get_parameter('offset', param_shape, init=jnp.zeros)
-            offset = jax.lax.pmean(offset, "dp")
+            offset = jax.lax.pmean(offset, "mp")
             normed = normed + offset
 
         return normed
@@ -201,7 +201,7 @@ class EmbeddingShard(hk.Module):
         self.proj = hk.Linear(self.out_dim, w_init=hk.initializers.TruncatedNormal(stddev=1 / np.sqrt(in_dim)))
 
     def __call__(self, x, dtype=jnp.bfloat16):
-        shard_start_index = jax.lax.axis_index('dp') * self.in_dim_per_shard
+        shard_start_index = jax.lax.axis_index('mp') * self.in_dim_per_shard
 
         input_onehot = jax.nn.one_hot(x - shard_start_index, self.in_dim_per_shard)
         proj_out = self.proj(input_onehot)
@@ -209,7 +209,7 @@ class EmbeddingShard(hk.Module):
         proj_out = g_psum(proj_out)
 
         if self.positional_embeddings is not None:
-            all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'dp')
+            all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'mp')
 
             all_pos_embed = hk.Flatten()(jnp.transpose(all_pos_embed, (1, 0, 2)))
 
@@ -577,7 +577,7 @@ class ProjectionShard(hk.Module):
         x = self.norm(x)
         proj = self.proj(x)
 
-        all_proj = jax.lax.all_gather(proj, 'dp')
+        all_proj = jax.lax.all_gather(proj, 'mp')
 
         return hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
 
