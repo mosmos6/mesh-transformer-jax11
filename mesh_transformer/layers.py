@@ -20,10 +20,10 @@ class ReplicatedLayerNorm(hk.Module):
 
         param_shape = inputs.shape[-1:]
         scale = hk.get_parameter("scale", param_shape, inputs.dtype, init=jnp.ones)
-        scale = jax.lax.all_gather(scale, "mp")[0]
+        scale = jax.lax.all_gather(scale, "dp")[0]
 
         offset = hk.get_parameter("offset", param_shape, inputs.dtype, init=jnp.zeros)
-        offset = jax.lax.all_gather(offset, "mp")[0]
+        offset = jax.lax.all_gather(offset, "dp")[0]
 
         scale = jnp.broadcast_to(scale, inputs.shape)
         offset = jnp.broadcast_to(offset, inputs.shape)
@@ -209,7 +209,7 @@ class EmbeddingShard(hk.Module):
         proj_out = g_psum(proj_out)
 
         if self.positional_embeddings is not None:
-            all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'mp')
+            all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'dp')
 
             all_pos_embed = hk.Flatten()(jnp.transpose(all_pos_embed, (1, 0, 2)))
 
