@@ -161,7 +161,7 @@ def shard_axis(x, axis_size, axis_name='mp'):
 
 
 
-def unshard_axis(x, axis_name='mp'):
+def unshard_axis(x, axis_name='dp'):
     print(f"Before all_gather: x.shape = {x.shape}, axis_name = {axis_name}")
     x = jax.lax.all_gather(x, axis_name)
     print(f"After all_gather: x.shape = {x.shape}, axis_name = {axis_name}")
