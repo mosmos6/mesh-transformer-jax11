@@ -10,6 +10,10 @@ from jax.experimental.shard_map import shard_map
 
 
 class ReplicatedLayerNorm(hk.Module):
+    def __init__(self, offset=True):
+        super().__init__()
+        self.offset = offset
+
     def __call__(self, inputs: jnp.ndarray) -> jnp.ndarray:
         mean = jnp.mean(inputs, axis=-1, keepdims=True)
         variance = jnp.var(inputs, axis=-1, keepdims=True)
