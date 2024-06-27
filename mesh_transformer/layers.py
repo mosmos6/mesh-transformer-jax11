@@ -274,7 +274,7 @@ class TransformerLayerShard(hk.Module):
 
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
-            print(f"self_attn: q.shape = {q.shape}, k.shape = {k.shape}")
+            #print(f"self_attn: q.shape = {q.shape}, k.shape = {k.shape}")
             k_rot = k[:, :, :, :self.pe_rotary_dims]
             k_pass = k[:, :, :, self.pe_rotary_dims:]
 
