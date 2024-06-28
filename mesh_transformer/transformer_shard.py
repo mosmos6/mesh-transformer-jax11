@@ -158,12 +158,15 @@ class CausalTransformer:
 
         self.gen_length = 1
         with mesh:
+            print("Initializing state with init_shmap...")
             self.state = self.init_shmap(keys, x)
+            print("State initialized.")
 
         param_count = hk.data_structures.tree_size(self.state['params'])
         print(f"Total parameters: {param_count}")
 
     def init(self, key, x):
+        print("Initializing model parameters...")
         def train_loss(x, y):
             transformer = CausalTransformerShard(self.config)
             return transformer.loss(x, y)
@@ -176,6 +179,7 @@ class CausalTransformer:
 
         # Call param_init_fn with the correctly shaped key
         params = param_init_fn(key, x, x)
+        print("Model parameters initialized.")
 
         return {
             "params": ("early_cast" in self.config and to_bf16 or to_f32)(params),
@@ -184,25 +188,35 @@ class CausalTransformer:
         }
 
     def write_ckpt(self, path, shard=0):
+        print(f"Writing checkpoint to {path}...")
         write_ckpt(self.state, path, shard)
+        print("Checkpoint written.")
 
     def load_ckpt(self, path):
+        print(f"Loading checkpoint from {path}...")
         self.state = read_ckpt(self.state, path, self.config["cores_per_replica"])
+        print("Checkpoint loaded.")
 
     def train(self, sample):
+        print("Starting training step...")
         obs = jnp.transpose(sample["obs"], (1, 0, 2))
         target = jnp.transpose(sample["target"], (1, 0, 2))
         loss, last_loss, grad_norm, grad_norm_micro, self.state = self.train_shmap(self.state, obs, target)
+        print("Training step completed.")
         return np.array(loss).mean(), np.array(last_loss).mean(), np.array(grad_norm).mean(), np.array(grad_norm_micro).mean()
 
     def eval(self, sample):
+        print("Starting evaluation step...")
         if "ctx_length" in sample:
             ctx_length = sample["ctx_length"]
         else:
             ctx_length = np.array([len(sample["obs"][0])] * len(sample["obs"]))
-        return self.eval_shmap(self.state, sample["obs"], sample["target"], ctx_length)
+        eval_result = self.eval_shmap(self.state, sample["obs"], sample["target"], ctx_length)
+        print("Evaluation step completed.")
+        return eval_result
 
     def generate(self, ctx, ctx_length, gen_length, sampler_options, return_logits=False):
+        print("Starting text generation...")
         key = jax.random.PRNGKey(random.randint(0, 2 ** 60))
         batch_size = ctx.shape[0]
         aux = jnp.zeros((batch_size, gen_length), dtype=jnp.uint32)
@@ -210,4 +224,6 @@ class CausalTransformer:
         self.return_logits = return_logits
         keys = jax.random.split(key, batch_size)
         keys = jax.vmap(lambda k: jax.random.split(k, 2))(keys)
-        return self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
+        generated_text = self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
+        print("Text generation completed.")
+        return generated_text
