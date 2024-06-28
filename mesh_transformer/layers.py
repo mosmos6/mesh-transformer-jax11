@@ -579,12 +579,17 @@ class ProjectionShard(hk.Module):
     def __call__(self, x):
         x = self.norm(x)
         proj = self.proj(x)
-        print("Before all_gather")
-        print(f"proj shape: {proj.shape}")
 
-        all_proj = jax.lax.all_gather(proj, 'mp')
+        print("Before all_gather")
+        print(f"proj shape: {proj.shape}, proj: {proj}")
+        try:
+            all_proj = jax.lax.all_gather(proj, 'mp')
+        except Exception as e:
+            print(f"Error during all_gather: {e}")
+            raise e
+
         print("After all_gather")
-        print(f"all_proj shape: {all_proj.shape}")
+        print(f"all_proj shape: {all_proj.shape}, all_proj: {all_proj}")
 
         return hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
 
