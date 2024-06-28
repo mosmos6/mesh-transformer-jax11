@@ -576,24 +576,22 @@ class ProjectionShard(hk.Module):
 
         self.proj = hk.Linear(self.dim_per_shard)
 
+        print(f"ProjectionShard initialized with out_dim: {out_dim}, shards: {shards}")
+
     def __call__(self, x):
+        print("Entering ProjectionShard __call__")
         x = self.norm(x)
         proj = self.proj(x)
 
-        print("Before all_gather")
-        print(f"proj shape: {proj.shape}, proj: {proj}")
-        try:
-            all_proj = jax.lax.all_gather(proj, 'mp')
-        except Exception as e:
-            print(f"Error during all_gather: {e}")
-            raise e
+        all_proj = jax.lax.all_gather(proj, 'mp')
+        print("all_gather completed in ProjectionShard")
 
-        print("After all_gather")
-        print(f"all_proj shape: {all_proj.shape}, all_proj: {all_proj}")
-
-        return hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
+        result = hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
+        print("ProjectionShard __call__ completed")
+        return result
 
     def loss(self, x, targets, z_loss=1):
+        print("Entering ProjectionShard loss")
         x = f_psum(x)
         x = self.norm(x)
         logits = self.proj(x)
@@ -617,7 +615,9 @@ class ProjectionShard(hk.Module):
 
         correct = (0.0 == predicted_logits)
 
+        print("ProjectionShard loss computed")
         return loss, correct
+
 
 
 class Projection(hk.Module):
