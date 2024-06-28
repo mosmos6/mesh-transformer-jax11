@@ -38,7 +38,10 @@ class CausalTransformerShard(hk.Module):
         else:
             self.rpe = None
 
+        print(f"CausalTransformerShard initialized with {layer_count} layers, {heads} heads, {shards} shards")
+
     def eval(self, context, target, z_loss=0., mask=0.0):
+        print("Entering CausalTransformerShard eval")
         input_len = context.shape[0]
 
         if self.rpe is not None:
@@ -50,13 +53,18 @@ class CausalTransformerShard(hk.Module):
 
         x = hk.remat(self.embed)(context)
 
-        for l in self.transformer_layers:
+        for i, l in enumerate(self.transformer_layers):
+            print(f"Processing layer {i} in eval")
             x = x + hk.remat(l)(x, attn_bias)
 
-        return hk.remat(self.proj.loss)(x, target, z_loss)
+        result = hk.remat(self.proj.loss)(x, target, z_loss)
+        print("CausalTransformerShard eval completed")
+        return result
 
     def loss(self, ctx, tgt, z_loss=False, mask=0.0):
+        print("Entering CausalTransformerShard loss")
         loss, correct = self.eval(ctx, tgt, float(z_loss), mask=mask)
+        print("CausalTransformerShard loss computed")
 
         return {
             "loss": loss.mean(),
@@ -66,6 +74,7 @@ class CausalTransformerShard(hk.Module):
         }
 
     def generate_initial(self, context, length):
+        print("Entering CausalTransformerShard generate_initial")
         last = context[-1:]
         context = context[:-1]
 
@@ -80,14 +89,17 @@ class CausalTransformerShard(hk.Module):
 
         states = []
 
-        for l in self.transformer_layers:
+        for i, l in enumerate(self.transformer_layers):
+            print(f"Processing layer {i} in generate_initial")
             res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
             x = x + res
             states.append(layer_state)
 
+        print("CausalTransformerShard generate_initial completed")
         return self.proj(x), (last.astype(jnp.uint32), states, hk.next_rng_key())
 
     def generate_once(self, new_tok, state):
+        print("Entering CausalTransformerShard generate_once")
         input_len = state[0]["v"].shape[0]
 
         if self.rpe is not None:
@@ -100,11 +112,13 @@ class CausalTransformerShard(hk.Module):
 
         new_states = []
 
-        for l, s in zip(self.transformer_layers, state):
+        for i, (l, s) in enumerate(zip(self.transformer_layers, state)):
+            print(f"Processing layer {i} in generate_once")
             res, layer_state = l.decode_once(s, x, attn_bias)
             x = x + res
             new_states.append(layer_state)
 
+        print("CausalTransformerShard generate_once completed")
         return self.proj(x), new_states
 
 class CausalTransformer:
