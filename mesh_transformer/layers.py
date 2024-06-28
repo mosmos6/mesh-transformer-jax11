@@ -333,6 +333,56 @@ class TransformerLayerShard(hk.Module):
 
         return g_psum(attn_out + dense_out)
 
+    def decode_once(self, decode_state, x, attn_bias):
+        x = f_psum(x)
+        x = self.norm(x)
+
+        assert x.shape[0] == 1
+
+        q, v, k = self.qvk_proj(x)
+
+        v = jnp.concatenate((decode_state["v"], v), axis=0)[1:]
+        k = jnp.concatenate((decode_state["k"], k), axis=0)[1:]
+
+        tokens_decoded = decode_state["tokens_decoded"] + 1
+        length = v.shape[0]
+
+        masked_tokens = length - tokens_decoded
+
+        attention_mask = jnp.arange(0, length) < masked_tokens
+        bias = (-1e10 * attention_mask)
+        bias += attn_bias
+
+        attn_out = self.self_attn(q, v, k, bias)
+        dense_out = self.ff(x)
+
+        return g_psum(attn_out + dense_out), {
+            "tokens_decoded": tokens_decoded,
+            "k": k,
+            "v": v
+        }
+
+    def get_init_decode_state(self, x, given_length, attn_bias):
+        x = f_psum(x)
+        x = self.norm(x)
+
+        q, v, k = self.qvk_proj(x)
+
+        full_length = x.shape[0]
+        masked_tokens = full_length - given_length
+
+        seq_len = x.shape[0]
+        causal_mask = np.tril(np.ones((seq_len, seq_len)))
+
+        bias = -1e10 * (1. - causal_mask)
+        bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)
+        bias += attn_bias
+
+        attn_out = self.self_attn(q, v, k, bias)
+        dense_out = self.ff(x)
+
+        return g_psum(attn_out + dense_out), {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
+
 
 # This new class combines the input and output projection into one matmul for better efficiency
 class TransformerLayerShardV2(hk.Module):
