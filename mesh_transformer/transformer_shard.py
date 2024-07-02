@@ -53,7 +53,7 @@ class CausalTransformerShard(hk.Module):
         for l in self.transformer_layers:
             x = x + hk.remat(l)(x, attn_bias)
 
-        shard_start_index = compute_shard_start_index(self.proj.dim_per_shard)
+        shard_start_index = jax.lax.axis_index('mp') * self.proj.dim_per_shard
         return hk.remat(self.proj.loss)(x, target, shard_start_index, z_loss)
 
     def loss(self, ctx, tgt, z_loss=False, mask=0.0):
