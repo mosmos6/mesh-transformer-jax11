@@ -66,7 +66,6 @@ class CausalTransformerShard(hk.Module):
             "correct": correct
         }
 
-
     def generate_initial(self, context, length):
         print("Entering CausalTransformerShard generate_initial")
         last = context[-1:]
