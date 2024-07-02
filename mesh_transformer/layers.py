@@ -581,10 +581,13 @@ class ProjectionShard(hk.Module):
     def __call__(self, x):
         print("Entering ProjectionShard __call__")
         x = self.norm(x)
+        print(f"After norm: x shape = {x.shape}")
+        
         proj = self.proj(x)
+        print(f"After projection: proj shape = {proj.shape}")
 
         all_proj = jax.lax.all_gather(proj, 'mp')
-        print("all_gather completed in ProjectionShard")
+        print(f"After all_gather: all_proj shape = {all_proj.shape}")
 
         result = hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
         print("ProjectionShard __call__ completed")
@@ -593,24 +596,32 @@ class ProjectionShard(hk.Module):
     def loss(self, x, targets, z_loss=1):
         print("Entering ProjectionShard loss")
         x = f_psum(x)
+        print(f"After f_psum: x shape = {x.shape}")
+
         x = self.norm(x)
+        print(f"After norm: x shape = {x.shape}")
+
         logits = self.proj(x)
+        print(f"After projection: logits shape = {logits.shape}")
 
         shard_start_index = jax.lax.axis_index('mp') * self.dim_per_shard
+        print(f"shard_start_index = {shard_start_index}")
+
         global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "mp")
         logits -= jax.lax.stop_gradient(global_max)
+        print(f"After global_max adjustment: logits shape = {logits.shape}")
 
         gt_onehot = jax.nn.one_hot(targets - shard_start_index, self.dim_per_shard)
         predicted_logits = jnp.sum(jnp.multiply(gt_onehot, logits), axis=-1)
         predicted_logits = g_psum(predicted_logits)
+        print(f"After g_psum: predicted_logits shape = {predicted_logits.shape}")
 
         exp_logits = jnp.exp(logits)
-
         sum_exp_logits = exp_logits.sum(axis=-1)
         sum_exp_logits = g_psum(sum_exp_logits)
+        print(f"After g_psum of exp_logits: sum_exp_logits shape = {sum_exp_logits.shape}")
 
         loss = jnp.log(sum_exp_logits) - predicted_logits
-
         loss += (1e-4 * jnp.square(jnp.log(sum_exp_logits)) * z_loss).mean()
 
         correct = (0.0 == predicted_logits)
