@@ -38,10 +38,7 @@ class CausalTransformerShard(hk.Module):
         else:
             self.rpe = None
 
-        print(f"CausalTransformerShard initialized with {layer_count} layers, {heads} heads, {shards} shards")
-
     def eval(self, context, target, z_loss=0., mask=0.0):
-        print("Entering CausalTransformerShard eval")
         input_len = context.shape[0]
 
         if self.rpe is not None:
@@ -53,18 +50,14 @@ class CausalTransformerShard(hk.Module):
 
         x = hk.remat(self.embed)(context)
 
-        for i, l in enumerate(self.transformer_layers):
-            print(f"Processing layer {i} in eval")
+        for l in self.transformer_layers:
             x = x + hk.remat(l)(x, attn_bias)
 
-        result = hk.remat(self.proj.loss)(x, target, z_loss)
-        print("CausalTransformerShard eval completed")
-        return result
+        shard_start_index = compute_shard_start_index(self.proj.dim_per_shard)
+        return hk.remat(self.proj.loss)(x, target, shard_start_index, z_loss)
 
     def loss(self, ctx, tgt, z_loss=False, mask=0.0):
-        print("Entering CausalTransformerShard loss")
         loss, correct = self.eval(ctx, tgt, float(z_loss), mask=mask)
-        print("CausalTransformerShard loss computed")
 
         return {
             "loss": loss.mean(),
@@ -72,6 +65,7 @@ class CausalTransformerShard(hk.Module):
             "all_loss": loss,
             "correct": correct
         }
+
 
     def generate_initial(self, context, length):
         print("Entering CausalTransformerShard generate_initial")
