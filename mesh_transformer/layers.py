@@ -274,6 +274,7 @@ class TransformerLayerShard(hk.Module):
 
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
+            print(f"self_attn: q.shape = {q.shape}, k.shape = {k.shape}")
             k_rot = k[:, :, :, :self.pe_rotary_dims]
             k_pass = k[:, :, :, self.pe_rotary_dims:]
 
@@ -290,9 +291,11 @@ class TransformerLayerShard(hk.Module):
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
         attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
+        print(f"attention_logits shape: {attention_logits.shape}")
 
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
+        print(f"attention_logits normalized shape: {attention_logits.shape}")
 
         attention_logits += attn_bias
 
@@ -314,11 +317,12 @@ class TransformerLayerShard(hk.Module):
         return q, v, k
 
     def __call__(self, x, attn_bias):
+        print("Before qvk_proj")
+        print(f"x shape: {x.shape}")
+
         x = f_psum(x)
         x = self.norm(x)
 
-        print("Before qvk_proj")
-        print(f"x shape: {x.shape}")
         q, v, k = self.qvk_proj(x)
         print("After qvk_proj")
         print(f"q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")
@@ -382,6 +386,7 @@ class TransformerLayerShard(hk.Module):
         dense_out = self.ff(x)
 
         return g_psum(attn_out + dense_out), {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
+
 
 
 # This new class combines the input and output projection into one matmul for better efficiency
