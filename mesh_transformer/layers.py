@@ -591,8 +591,12 @@ class ProjectionShard(hk.Module):
         proj = self.proj(x)
         print(f"After projection: proj shape = {proj.shape}")
 
-        all_proj = jax.lax.all_gather(proj, 'mp')
-        print(f"After all_gather: all_proj shape = {all_proj.shape}")
+        try:
+            all_proj = jax.lax.all_gather(proj, 'mp')
+            print(f"After all_gather: all_proj shape = {all_proj.shape}")
+        except Exception as e:
+            print(f"Error during all_gather: {e}")
+            raise
 
         result = hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
         print("ProjectionShard __call__ completed")
@@ -633,6 +637,7 @@ class ProjectionShard(hk.Module):
 
         print("ProjectionShard loss computed")
         return loss, correct
+
 
 
 
