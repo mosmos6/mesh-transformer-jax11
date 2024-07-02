@@ -565,6 +565,11 @@ class TransformerLayerShardV2(hk.Module):
         }
 
 
+def compute_shard_start_index(dim_per_shard):
+    return jax.lax.axis_index('mp') * dim_per_shard
+
+
+
 class ProjectionShard(hk.Module):
     def __init__(self, config, name=None):
         super().__init__(name=name)
@@ -583,7 +588,7 @@ class ProjectionShard(hk.Module):
 
         print(f"ProjectionShard initialized with out_dim: {out_dim}, shards: {shards}")
 
-    def __call__(self, x):
+    def __call__(self, x, shard_start_index):
         print("Entering ProjectionShard __call__")
         x = self.norm(x)
         print(f"After norm: x shape = {x.shape}")
@@ -602,7 +607,7 @@ class ProjectionShard(hk.Module):
         print("ProjectionShard __call__ completed")
         return result
 
-    def loss(self, x, targets, z_loss=1):
+    def loss(self, x, targets, shard_start_index, z_loss=1):
         print("Entering ProjectionShard loss")
         x = f_psum(x)
         print(f"After f_psum: x shape = {x.shape}")
@@ -613,7 +618,6 @@ class ProjectionShard(hk.Module):
         logits = self.proj(x)
         print(f"After projection: logits shape = {logits.shape}")
 
-        shard_start_index = jax.lax.axis_index('mp') * self.dim_per_shard
         print(f"shard_start_index = {shard_start_index}")
 
         global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "mp")
@@ -637,6 +641,7 @@ class ProjectionShard(hk.Module):
 
         print("ProjectionShard loss computed")
         return loss, correct
+
 
 
 
