@@ -573,73 +573,46 @@ def compute_shard_start_index(dim_per_shard):
 class ProjectionShard(hk.Module):
     def __init__(self, config, name=None):
         super().__init__(name=name)
-        out_dim = config["n_vocab"]
-        shards = config["cores_per_replica"]
-        norm = getnorm(config["norm"])
+        self.dim_per_shard = config["dim_per_shard"]
+        self.out_dim = config["out_dim"]
+        self.shards = config["cores_per_replica"]
 
-        assert out_dim % shards == 0
+    def loss(self, x, target, shard_start_index, z_loss):
+        # Apply collective operations within the mesh context
+        with jax.named_scope("ProjectionShard"):
+            x = jax.lax.all_gather(x, 'dp')
+            x = jax.lax.all_gather(x, 'mp')
 
-        self.dim = out_dim
-        self.dim_per_shard = out_dim // shards
+            logits = hk.Linear(self.out_dim)(x)
+            logits = jax.lax.all_gather(logits, 'dp')
+            logits = jax.lax.all_gather(logits, 'mp')
 
-        self.norm = norm
+            shard_start_index = jax.lax.all_gather(shard_start_index, 'mp')
+            logits = jnp.maximum(logits, shard_start_index)
 
-        self.proj = hk.Linear(self.dim_per_shard)
+            logits = jax.lax.psum(logits, 'dp')
+            logits = jax.lax.psum(logits, 'mp')
 
-        print(f"ProjectionShard initialized with out_dim: {out_dim}, shards: {shards}")
+            exp_logits = jnp.exp(logits)
+            sum_exp_logits = jax.lax.psum(exp_logits, 'dp')
+            sum_exp_logits = jax.lax.psum(sum_exp_logits, 'mp')
 
-    def __call__(self, x, shard_start_index):
-        print("Entering ProjectionShard __call__")
-        x = self.norm(x)
-        print(f"After norm: x shape = {x.shape}")
-        
-        proj = self.proj(x)
-        print(f"After projection: proj shape = {proj.shape}")
+            predicted_logits = logits - jnp.log(sum_exp_logits)
 
-        try:
-            all_proj = jax.lax.all_gather(proj, 'mp')
-            print(f"After all_gather: all_proj shape = {all_proj.shape}")
-        except Exception as e:
-            print(f"Error during all_gather: {e}")
-            raise
+            loss = optax.softmax_cross_entropy(predicted_logits, target)
+            loss = jax.lax.psum(loss, 'dp')
+            loss = jax.lax.psum(loss, 'mp')
 
-        result = hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
-        print("ProjectionShard __call__ completed")
-        return result
+            if z_loss:
+                z_loss_val = jnp.square(logits)
+                z_loss_val = jax.lax.psum(z_loss_val, 'dp')
+                z_loss_val = jax.lax.psum(z_loss_val, 'mp')
+                loss += z_loss_val * z_loss
 
-    def loss(self, x, targets, shard_start_index, z_loss=1):
-        print("Entering ProjectionShard loss")
-        x = f_psum(x)
-        print(f"After f_psum: x shape = {x.shape}")
+            correct = jnp.argmax(logits, axis=-1) == jnp.argmax(target, axis=-1)
+            correct = jax.lax.psum(correct, 'dp')
+            correct = jax.lax.psum(correct, 'mp')
 
-        x = self.norm(x)
-        print(f"After norm: x shape = {x.shape}")
-
-        logits = self.proj(x)
-        print(f"After projection: logits shape = {logits.shape}")
-
-        print(f"shard_start_index = {shard_start_index}")
-
-        global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "mp")
-        logits -= jax.lax.stop_gradient(global_max)
-        print(f"After global_max adjustment: logits shape = {logits.shape}")
-
-        gt_onehot = jax.nn.one_hot(targets - shard_start_index, self.dim_per_shard)
-        predicted_logits = jnp.sum(jnp.multiply(gt_onehot, logits), axis=-1)
-        predicted_logits = g_psum(predicted_logits)
-        print(f"After g_psum: predicted_logits shape = {predicted_logits.shape}")
-
-        exp_logits = jnp.exp(logits)
-        sum_exp_logits = exp_logits.sum(axis=-1)
-        sum_exp_logits = g_psum(sum_exp_logits)
-        print(f"After g_psum of exp_logits: sum_exp_logits shape = {sum_exp_logits.shape}")
-
-        loss = jnp.log(sum_exp_logits) - predicted_logits
-        loss += (1e-4 * jnp.square(jnp.log(sum_exp_logits)) * z_loss).mean()
-
-        correct = (0.0 == predicted_logits)
-
-        print("ProjectionShard loss computed")
         return loss, correct
 
 
