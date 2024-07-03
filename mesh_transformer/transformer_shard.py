@@ -53,8 +53,9 @@ class CausalTransformerShard(hk.Module):
         for l in self.transformer_layers:
             x = x + hk.remat(l)(x, attn_bias)
 
-        shard_start_index = jax.lax.axis_index('mp') * self.proj.dim_per_shard
-        return hk.remat(self.proj.loss)(x, target, shard_start_index, z_loss)
+        with self.proj.mesh:
+            shard_start_index = jax.lax.axis_index('mp') * self.proj.dim_per_shard
+            return hk.remat(self.proj.loss)(x, target, shard_start_index, z_loss)
 
     def loss(self, ctx, tgt, z_loss=False, mask=0.0):
         loss, correct = self.eval(ctx, tgt, float(z_loss), mask=mask)
@@ -65,6 +66,7 @@ class CausalTransformerShard(hk.Module):
             "all_loss": loss,
             "correct": correct
         }
+
 
     def generate_initial(self, context, length):
         print("Entering CausalTransformerShard generate_initial")
@@ -206,32 +208,42 @@ class CausalTransformer:
 
     def train(self, sample):
         print("Starting training step...")
-        obs = jnp.transpose(sample["obs"], (1, 0, 2))
-        target = jnp.transpose(sample["target"], (1, 0, 2))
-        loss, last_loss, grad_norm, grad_norm_micro, self.state = self.train_shmap(self.state, obs, target)
+        obs = jnp.transpose(sample["obs"], (1, 0))
+        tgt = jnp.transpose(sample["target"], (1, 0))
+
+        with self.mesh:
+            metrics, state, logits = self.train_shmap(self.state, obs, tgt)
+
+        # Replace params with previous params if NaN loss
+        new_params = jax.tree_util.tree_map(
+            lambda new, old: jnp.where(jnp.isnan(metrics["loss"]), old, new),
+            state["params"],
+            self.state["params"],
+        )
+        state = state.replace(params=new_params)
+
+        self.state = state
         print("Training step completed.")
-        return np.array(loss).mean(), np.array(last_loss).mean(), np.array(grad_norm).mean(), np.array(grad_norm_micro).mean()
 
-    def eval(self, sample):
-        print("Starting evaluation step...")
-        if "ctx_length" in sample:
-            ctx_length = sample["ctx_length"]
-        else:
-            ctx_length = np.array([len(sample["obs"][0])] * len(sample["obs"]))
-        eval_result = self.eval_shmap(self.state, sample["obs"], sample["target"], ctx_length)
-        print("Evaluation step completed.")
-        return eval_result
+        return jax.device_get(metrics), logits
 
-    def generate(self, ctx, ctx_length, gen_length, sampler_options, return_logits=False):
-        print("Starting text generation...")
-        key = jax.random.PRNGKey(random.randint(0, 2 ** 60))
-        batch_size = ctx.shape[0]
-        aux = jnp.zeros((batch_size, gen_length), dtype=jnp.uint32)
-        self.gen_length = gen_length
-        self.return_logits = return_logits
-        keys = jax.random.split(key, batch_size)
-        keys = jax.vmap(lambda k: jax.random.split(k, 2))(keys)
-        generated_text = self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
-        print("Text generation completed.")
-        return generated_text
+    def eval(self, context, target, z_loss=0., mask=0.0):
+        print("Starting evaluation...")
+        obs = jnp.transpose(context, (1, 0))
+        tgt = jnp.transpose(target, (1, 0))
 
+        with self.mesh:
+            return self.eval_shmap(self.state, obs, tgt, z_loss, mask)
+
+    def generate(self, context, gen_length, temperature=1.0, top_k=20, top_p=0.9, callback=None):
+        print("Starting generation...")
+        obs = jnp.transpose(context, (1, 0))
+
+        with self.mesh:
+            return self.generate_shmap(self.state, obs, gen_length, temperature, top_k, top_p, callback)
+
+    def move(self):
+        print("Moving state to bf16...")
+        with self.mesh:
+            self.state = self.move_shmap(self.state, None)
+        print("State moved to bf16.")
