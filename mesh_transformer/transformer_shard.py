@@ -136,13 +136,13 @@ class CausalTransformer:
         in_specs_init = (P('dp', 'mp'), P('dp'))
         out_specs_init = P('dp', 'mp')
 
-        in_specs_eval = (P('dp', 'mp'), P('dp'), P('dp'), P('dp'))
+        in_specs_eval = (P('dp', 'mp'), P('dp'), P(None), P(None))
         out_specs_eval = P('dp', 'mp')
 
-        in_specs_train = (P('dp', 'mp'), P('dp'), P('dp'))
+        in_specs_train = (P('dp', 'mp'), P('dp'), P(None))
         out_specs_train = (P('dp'), P('dp'), P('dp'), P('dp'), P('dp', 'mp'))
 
-        in_specs_generate = (P('dp', 'mp'), P('dp'), P('dp'), P('dp'), P('dp'), P('dp'))
+        in_specs_generate = (P('dp', 'mp'), P('dp'), P(None), P(None), P(None), P(None))
         out_specs_generate = (P('dp', 'mp'), P('dp'))
 
         in_specs_move = (P('dp', 'mp'), P('dp'))
@@ -234,3 +234,4 @@ class CausalTransformer:
         generated_text = self.generate_shmap(self.state, keys, ctx, np.array(ctx_length, dtype=np.uint32), aux, sampler_options)
         print("Text generation completed.")
         return generated_text
+
