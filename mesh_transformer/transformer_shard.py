@@ -14,18 +14,6 @@ from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, Relat
 from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 
 
-# Load configuration from JSON
-config_path = 'gptjtest.json'
-
-if not os.path.exists(config_path):
-    raise FileNotFoundError(f"Configuration file not found: {config_path}")
-
-with open(config_path, 'r') as f:
-    params = json.load(f)
-
-# Ensure dim_per_shard is calculated correctly
-params["dim_per_shard"] = params["n_vocab"] // params["cores_per_replica"]
-
 
 class CausalTransformerShard(hk.Module):
     def __init__(self, config):
