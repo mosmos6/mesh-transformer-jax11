@@ -36,9 +36,7 @@ class CausalTransformerShard(hk.Module):
 
         self.transformer_layers = []
         self.heads = heads
-
         self.heads_per_shard = heads // shards
-
         self.embed = EmbeddingShard(config)
 
         init_scale = 2. / layer_count
@@ -129,6 +127,7 @@ class CausalTransformerShard(hk.Module):
 
         print("CausalTransformerShard generate_once completed")
         return self.proj(x), new_states
+
 
 class CausalTransformer:
     def __init__(self, config):
