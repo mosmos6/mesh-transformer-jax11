@@ -134,7 +134,7 @@ class CausalTransformer:
             return CausalTransformerShard(config).init(jax.random.PRNGKey(0), sample, sample)
 
         with self.mesh:
-            self.init_shmap = shard_map(init_fn, in_axes=(), out_axes=(), devices=self.mesh)
+            self.init_shmap = shard_map(init_fn, in_specs=(), out_specs=(), devices=self.mesh)
 
         self.state = self.init_shmap()
 
