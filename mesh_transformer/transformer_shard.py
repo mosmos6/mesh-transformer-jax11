@@ -12,6 +12,15 @@ from mesh_transformer.util import to_f32, to_bf16, global_norm
 from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, RelativePositionEmbs, ProjectionShard
 from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 
+import json
+
+with open('config.json', 'r') as f:
+    params = json.load(f)
+
+# Ensure dim_per_shard is calculated correctly
+params["dim_per_shard"] = params["n_vocab"] // params["cores_per_replica"]
+
+
 class CausalTransformerShard(hk.Module):
     def __init__(self, config):
         super().__init__()
@@ -66,7 +75,6 @@ class CausalTransformerShard(hk.Module):
             "all_loss": loss,
             "correct": correct
         }
-
 
     def generate_initial(self, context, length):
         print("Entering CausalTransformerShard generate_initial")
@@ -125,86 +133,41 @@ class CausalTransformer:
         dp = jax.device_count() // config["cores_per_replica"]
         mp = config["cores_per_replica"]
 
-        mp_per_host = min(mp, 8)
+        self.mesh = Mesh(np.array(jax.devices()).reshape(dp, mp), ("dp", "mp"))
 
-        assert mp == config["cores_per_replica"]
+        def init_fn():
+            sample = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
+            return CausalTransformerShard(config).init(jax.random.PRNGKey(0), sample, sample)
 
-        # Define the device mesh
-        devices = mesh_utils.create_device_mesh((dp, mp))
-        mesh = Mesh(devices, axis_names=('dp', 'mp'))
-        self.mesh = mesh  # Store the mesh for context management
+        with self.mesh:
+            self.init_shmap = shard_map(init_fn, in_axes=(), out_axes=(), devices=self.mesh)
 
-        # Define in_specs and out_specs for each function
-        in_specs_init = (P('dp', 'mp'), P('dp'))
-        out_specs_init = P('dp', 'mp')
+        self.state = self.init_shmap()
 
-        in_specs_eval = (P('dp', 'mp'), P('dp'), P(None), P(None))
-        out_specs_eval = P('dp', 'mp')
+        def train_shard_fn(state, x, y):
+            return CausalTransformerShard(config).train(x, y)
 
-        in_specs_train = (P('dp', 'mp'), P('dp'), P(None))
-        out_specs_train = (P('dp'), P('dp'), P('dp'), P('dp'), P('dp', 'mp'))
+        def eval_shard_fn(state, x, y, z_loss, mask):
+            return CausalTransformerShard(config).eval(x, y, z_loss, mask)
 
-        in_specs_generate = (P('dp', 'mp'), P('dp'), P(None), P(None), P(None), P(None))
-        out_specs_generate = (P('dp', 'mp'), P('dp'))
+        def generate_shard_fn(state, x, gen_length, temperature, top_k, top_p, callback):
+            return CausalTransformerShard(config).generate(x, gen_length, temperature, top_k, top_p, callback)
 
-        in_specs_move = (P('dp', 'mp'), P('dp'))
-        out_specs_move = P('dp', 'mp')
+        def move_shard_fn(state, _):
+            return jax.tree_map(lambda x: x.astype(jnp.bfloat16), state)
 
-        # Create the shard_map functions
-        self.init_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_init, out_specs=out_specs_init)(self.init)
-        self.eval_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_eval, out_specs=out_specs_eval)(self.eval)
-        self.train_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_train, out_specs=out_specs_train)(self.train)
-        self.generate_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_generate, out_specs=out_specs_generate)(self.generate)
-        self.move_shmap = partial(shard_map, mesh=mesh, in_specs=in_specs_move, out_specs=out_specs_move)(lambda x, _: to_bf16(x))
+        with self.mesh:
+            self.train_shmap = shard_map(train_shard_fn, in_axes=(None, 0, 0), out_axes=(None, 0), devices=self.mesh)
+            self.eval_shmap = shard_map(eval_shard_fn, in_axes=(None, 0, 0, None, None), out_axes=(), devices=self.mesh)
+            self.generate_shmap = shard_map(generate_shard_fn, in_axes=(None, 0, None, None, None, None), out_axes=(), devices=self.mesh)
+            self.move_shmap = shard_map(move_shard_fn, in_axes=(None, None), out_axes=(None), devices=self.mesh)
 
-        # Generate PRNG keys
-        key = jax.random.PRNGKey(42)
-        total_devices = dp * mp
-        keys = jax.random.split(key, total_devices).reshape(dp, mp, 2)
+        self.opt = optax.chain(
+            optax.clip_by_global_norm(1),
+            optimizer
+        )
 
-        example_shape = (max(dp // jax.process_count(), 1), config["seq"],)
-        x = jax.random.uniform(key, example_shape, minval=0, maxval=config["n_vocab"]).astype(jnp.uint32)  # batch, len
-
-        self.gen_length = 1
-        with mesh:
-            print("Initializing state with init_shmap...")
-            self.state = self.init_shmap(keys, x)
-            print("State initialized.")
-
-        param_count = hk.data_structures.tree_size(self.state['params'])
-        print(f"Total parameters: {param_count}")
-
-    def init(self, key, x):
-        print("Initializing model parameters...")
-        def train_loss(x, y):
-            transformer = CausalTransformerShard(self.config)
-            return transformer.loss(x, y)
-
-        param_init_fn = hk.transform(hk.experimental.optimize_rng_use(train_loss)).init
-
-        # Reshape key to have the correct shape
-        key = key[0]
-        key = jnp.reshape(key, (2,))
-
-        # Call param_init_fn with the correctly shaped key
-        params = param_init_fn(key, x, x)
-        print("Model parameters initialized.")
-
-        return {
-            "params": ("early_cast" in self.config and to_bf16 or to_f32)(params),
-            "step": np.array(0),
-            "opt_state": self.config["optimizer"].init(params)
-        }
-
-    def write_ckpt(self, path, shard=0):
-        print(f"Writing checkpoint to {path}...")
-        write_ckpt(self.state, path, shard)
-        print("Checkpoint written.")
-
-    def load_ckpt(self, path):
-        print(f"Loading checkpoint from {path}...")
-        self.state = read_ckpt(self.state, path, self.config["cores_per_replica"])
-        print("Checkpoint loaded.")
+        print("CausalTransformer initialized.")
 
     def train(self, sample):
         print("Starting training step...")
