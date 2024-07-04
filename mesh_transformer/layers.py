@@ -2,6 +2,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import numpy as np
+import os
 from einops import rearrange, repeat
 
 from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
