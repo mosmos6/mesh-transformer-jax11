@@ -570,15 +570,22 @@ def compute_shard_start_index(dim_per_shard):
 
 
 
+import json
+
+with open('config.json', 'r') as f:
+    params = json.load(f)
+
+# Ensure dim_per_shard is calculated correctly
+params["dim_per_shard"] = params["n_vocab"] // params["cores_per_replica"]
+
 class ProjectionShard(hk.Module):
     def __init__(self, config, name=None):
         super().__init__(name=name)
         self.dim_per_shard = config["dim_per_shard"]
-        self.out_dim = config["out_dim"]
+        self.out_dim = config["n_vocab"]
         self.shards = config["cores_per_replica"]
 
     def loss(self, x, target, shard_start_index, z_loss):
-        # Apply collective operations within the mesh context
         with jax.named_scope("ProjectionShard"):
             x = jax.lax.all_gather(x, 'dp')
             x = jax.lax.all_gather(x, 'mp')
@@ -614,7 +621,6 @@ class ProjectionShard(hk.Module):
             correct = jax.lax.psum(correct, 'mp')
 
         return loss, correct
-
 
 
 
