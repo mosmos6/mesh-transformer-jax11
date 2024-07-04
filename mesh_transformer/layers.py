@@ -569,17 +569,7 @@ class TransformerLayerShardV2(hk.Module):
 def compute_shard_start_index(dim_per_shard):
     return jax.lax.axis_index('mp') * dim_per_shard
 
-# Load configuration from JSON
-config_path = 'gptjtest.json'
 
-if not os.path.exists(config_path):
-    raise FileNotFoundError(f"Configuration file not found: {config_path}")
-
-with open(config_path, 'r') as f:
-    params = json.load(f)
-
-# Ensure dim_per_shard is calculated correctly
-params["dim_per_shard"] = params["n_vocab"] // params["cores_per_replica"]
 
 class ProjectionShard(hk.Module):
     def __init__(self, config, name=None):
