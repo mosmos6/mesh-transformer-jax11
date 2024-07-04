@@ -127,6 +127,10 @@ class CausalTransformer:
         dp = jax.device_count() // config["cores_per_replica"]
         mp = config["cores_per_replica"]
 
+          # Define the device mesh
+        devices = mesh_utils.create_device_mesh((dp, mp))
+        mesh = Mesh(devices, axis_names=('dp', 'mp'))
+        
         self.mesh = Mesh(np.array(jax.devices()).reshape(dp, mp), ("dp", "mp"))
 
         def init_fn():
