@@ -12,9 +12,14 @@ from mesh_transformer.util import to_f32, to_bf16, global_norm
 from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, RelativePositionEmbs, ProjectionShard
 from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 
-import json
 
-with open('gptjtest.json', 'r') as f:
+# Load configuration from JSON
+config_path = 'gptjtest.json'
+
+if not os.path.exists(config_path):
+    raise FileNotFoundError(f"Configuration file not found: {config_path}")
+
+with open(config_path, 'r') as f:
     params = json.load(f)
 
 # Ensure dim_per_shard is calculated correctly
