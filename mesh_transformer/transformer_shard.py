@@ -14,7 +14,7 @@ from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 
 import json
 
-with open('config.json', 'r') as f:
+with open('gptjtest.json', 'r') as f:
     params = json.load(f)
 
 # Ensure dim_per_shard is calculated correctly
