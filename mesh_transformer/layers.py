@@ -572,7 +572,7 @@ def compute_shard_start_index(dim_per_shard):
 
 import json
 
-with open('config.json', 'r') as f:
+with open('gptjtest.json', 'r') as f:
     params = json.load(f)
 
 # Ensure dim_per_shard is calculated correctly
