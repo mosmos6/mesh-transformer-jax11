@@ -151,10 +151,10 @@ class CausalTransformer:
             return jax.tree_map(lambda x: x.astype(jnp.bfloat16), state)
 
         with self.mesh:
-            self.train_shmap = shard_map(train_shard_fn, in_axes=(None, 0, 0), out_axes=(None, 0), devices=self.mesh)
-            self.eval_shmap = shard_map(eval_shard_fn, in_axes=(None, 0, 0, None, None), out_axes=(), devices=self.mesh)
-            self.generate_shmap = shard_map(generate_shard_fn, in_axes=(None, 0, None, None, None, None), out_axes=(), devices=self.mesh)
-            self.move_shmap = shard_map(move_shard_fn, in_axes=(None, None), out_axes=(None), devices=self.mesh)
+            self.train_shmap = shard_map(train_shard_fn, in_specs=(None, 0, 0), out_specs=(None, 0), devices=self.mesh)
+            self.eval_shmap = shard_map(eval_shard_fn, in_specs=(None, 0, 0, None, None), out_specs=(), devices=self.mesh)
+            self.generate_shmap = shard_map(generate_shard_fn, in_specs=(None, 0, None, None, None, None), out_specs=(), devices=self.mesh)
+            self.move_shmap = shard_map(move_shard_fn, in_specs=(None, None), out_specs=(None), devices=self.mesh)
 
         self.opt = optax.chain(
             optax.clip_by_global_norm(1),
