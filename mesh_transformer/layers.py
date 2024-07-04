@@ -584,9 +584,14 @@ params["dim_per_shard"] = params["n_vocab"] // params["cores_per_replica"]
 class ProjectionShard(hk.Module):
     def __init__(self, config, name=None):
         super().__init__(name=name)
-        self.dim_per_shard = config["dim_per_shard"]
-        self.out_dim = config["n_vocab"]
-        self.shards = config["cores_per_replica"]
+        out_dim = config["n_vocab"]
+        shards = config["cores_per_replica"]
+
+        assert out_dim % shards == 0
+
+        self.dim_per_shard = out_dim // shards
+        self.out_dim = out_dim
+        self.shards = shards
 
     def loss(self, x, target, shard_start_index, z_loss):
         with jax.named_scope("ProjectionShard"):
