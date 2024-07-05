@@ -574,51 +574,34 @@ def compute_shard_start_index(dim_per_shard):
 class ProjectionShard(hk.Module):
     def __init__(self, config, name=None):
         super().__init__(name=name)
-        out_dim = config["n_vocab"]
-        shards = config["cores_per_replica"]
-
-        assert out_dim % shards == 0
-
-        self.dim_per_shard = out_dim // shards
-        self.out_dim = out_dim
-        self.shards = shards
+        self.dim_per_shard = config["dim_per_shard"]
+        self.out_dim = config["out_dim"]
+        self.shards = config["cores_per_replica"]
+        self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(self.shards, -1), ("dp", "mp"))
 
     def loss(self, x, target, shard_start_index, z_loss):
-        with jax.named_scope("ProjectionShard"):
-            x = jax.lax.all_gather(x, 'dp')
-            x = jax.lax.all_gather(x, 'mp')
+        logits = self.forward(x)
+        logits = jnp.swapaxes(logits, 0, 1)
 
-            logits = hk.Linear(self.out_dim)(x)
-            logits = jax.lax.all_gather(logits, 'dp')
-            logits = jax.lax.all_gather(logits, 'mp')
+        shard_start_index = jax.lax.psum(shard_start_index, "mp")
+        predicted_logits = jnp.take_along_axis(logits, target[:, :, None] + shard_start_index, axis=-1)
+        exp_logits = jnp.exp(logits - logits.max(axis=-1, keepdims=True))
+        sum_exp_logits = jax.lax.psum(exp_logits, axis_name="mp")
 
-            shard_start_index = jax.lax.all_gather(shard_start_index, 'mp')
-            logits = jnp.maximum(logits, shard_start_index)
+        softmax_logits = predicted_logits - jnp.log(sum_exp_logits)
 
-            logits = jax.lax.psum(logits, 'dp')
-            logits = jax.lax.psum(logits, 'mp')
+        if z_loss:
+            z_loss_penalty = z_loss * jnp.square(jnp.log(sum_exp_logits)).mean()
+        else:
+            z_loss_penalty = 0
 
-            exp_logits = jnp.exp(logits)
-            sum_exp_logits = jax.lax.psum(exp_logits, 'dp')
-            sum_exp_logits = jax.lax.psum(sum_exp_logits, 'mp')
+        return -(softmax_logits.mean() + z_loss_penalty), jnp.argmax(logits, axis=-1) == target
 
-            predicted_logits = logits - jnp.log(sum_exp_logits)
+    def forward(self, x):
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = hk.Linear(self.out_dim)(x)
+        return x
 
-            loss = optax.softmax_cross_entropy(predicted_logits, target)
-            loss = jax.lax.psum(loss, 'dp')
-            loss = jax.lax.psum(loss, 'mp')
-
-            if z_loss:
-                z_loss_val = jnp.square(logits)
-                z_loss_val = jax.lax.psum(z_loss_val, 'dp')
-                z_loss_val = jax.lax.psum(z_loss_val, 'mp')
-                loss += z_loss_val * z_loss
-
-            correct = jnp.argmax(logits, axis=-1) == jnp.argmax(target, axis=-1)
-            correct = jax.lax.psum(correct, 'dp')
-            correct = jax.lax.psum(correct, 'mp')
-
-        return loss, correct
 
 
 
