@@ -22,6 +22,7 @@ class CausalTransformerShard(hk.Module):
         heads = config["n_heads"]
         shards = config["cores_per_replica"]
         layer_count = config["layers"]
+        self.dim_per_shard = config["dim_per_shard"]
 
         self.transformer_layers = []
         self.heads = heads
@@ -56,7 +57,7 @@ class CausalTransformerShard(hk.Module):
             x = x + hk.remat(l)(x, attn_bias)
 
         with self.proj.mesh:
-            shard_start_index = jax.lax.axis_index('mp') * self.proj.dim_per_shard
+            shard_start_index = jax.lax.axis_index('mp') * self.dim_per_shard
             return hk.remat(self.proj.loss)(x, target, shard_start_index, z_loss)
 
     def loss(self, ctx, tgt, z_loss=False, mask=0.0):
@@ -116,6 +117,7 @@ class CausalTransformerShard(hk.Module):
 
         print("CausalTransformerShard generate_once completed")
         return self.proj(x), new_states
+
 
 
 class CausalTransformer:
