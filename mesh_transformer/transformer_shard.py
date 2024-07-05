@@ -129,18 +129,16 @@ class CausalTransformer:
         dp = jax.device_count() // config["cores_per_replica"]
         mp = config["cores_per_replica"]
 
-          # Define the device mesh
+        # Define the device mesh
         devices = mesh_utils.create_device_mesh((dp, mp))
-        mesh = Mesh(devices, axis_names=('dp', 'mp'))
-        
-        self.mesh = Mesh(np.array(jax.devices()).reshape(dp, mp), ("dp", "mp"))
+        self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
         def init_fn():
             sample = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
             return CausalTransformerShard(config).init(jax.random.PRNGKey(0), sample, sample)
 
         with self.mesh:
-            self.init_shmap = shard_map(init_fn, in_specs=(), out_specs=(), devices=self.mesh)
+            self.init_shmap = shard_map(init_fn, in_specs=(), out_specs=())
 
         self.state = self.init_shmap()
 
@@ -157,10 +155,10 @@ class CausalTransformer:
             return jax.tree_map(lambda x: x.astype(jnp.bfloat16), state)
 
         with self.mesh:
-            self.train_shmap = shard_map(train_shard_fn, in_specs=(None, 0, 0), out_specs=(None, 0), devices=self.mesh)
-            self.eval_shmap = shard_map(eval_shard_fn, in_specs=(None, 0, 0, None, None), out_specs=(), devices=self.mesh)
-            self.generate_shmap = shard_map(generate_shard_fn, in_specs=(None, 0, None, None, None, None), out_specs=(), devices=self.mesh)
-            self.move_shmap = shard_map(move_shard_fn, in_specs=(None, None), out_specs=(None), devices=self.mesh)
+            self.train_shmap = shard_map(train_shard_fn, in_specs=(None, 0, 0), out_specs=(None, 0))
+            self.eval_shmap = shard_map(eval_shard_fn, in_specs=(None, 0, 0, None, None), out_specs=())
+            self.generate_shmap = shard_map(generate_shard_fn, in_specs=(None, 0, None, None, None, None), out_specs=())
+            self.move_shmap = shard_map(move_shard_fn, in_specs=(None, None), out_specs=(None))
 
         self.opt = optax.chain(
             optax.clip_by_global_norm(1),
