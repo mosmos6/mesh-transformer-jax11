@@ -120,6 +120,7 @@ class CausalTransformerShard(hk.Module):
 
 
 
+
 class CausalTransformer:
     def __init__(self, config):
         self.config = config
@@ -137,8 +138,7 @@ class CausalTransformer:
             sample = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
             return CausalTransformerShard(config).init(jax.random.PRNGKey(0), sample, sample)
 
-        with self.mesh:
-            self.init_shmap = shard_map(init_fn, in_specs=(), out_specs=())
+        self.init_shmap = shard_map(init_fn, in_specs=(), out_specs=(), mesh=self.mesh)
 
         self.state = self.init_shmap()
 
@@ -154,11 +154,10 @@ class CausalTransformer:
         def move_shard_fn(state, _):
             return jax.tree_map(lambda x: x.astype(jnp.bfloat16), state)
 
-        with self.mesh:
-            self.train_shmap = shard_map(train_shard_fn, in_specs=(None, 0, 0), out_specs=(None, 0))
-            self.eval_shmap = shard_map(eval_shard_fn, in_specs=(None, 0, 0, None, None), out_specs=())
-            self.generate_shmap = shard_map(generate_shard_fn, in_specs=(None, 0, None, None, None, None), out_specs=())
-            self.move_shmap = shard_map(move_shard_fn, in_specs=(None, None), out_specs=(None))
+        self.train_shmap = shard_map(train_shard_fn, in_specs=(None, 0, 0), out_specs=(None, 0), mesh=self.mesh)
+        self.eval_shmap = shard_map(eval_shard_fn, in_specs=(None, 0, 0, None, None), out_specs=(), mesh=self.mesh)
+        self.generate_shmap = shard_map(generate_shard_fn, in_specs=(None, 0, None, None, None, None), out_specs=(), mesh=self.mesh)
+        self.move_shmap = shard_map(move_shard_fn, in_specs=(None, None), out_specs=(None), mesh=self.mesh)
 
         self.opt = optax.chain(
             optax.clip_by_global_norm(1),
@@ -172,8 +171,7 @@ class CausalTransformer:
         obs = jnp.transpose(sample["obs"], (1, 0))
         tgt = jnp.transpose(sample["target"], (1, 0))
 
-        with self.mesh:
-            metrics, state, logits = self.train_shmap(self.state, obs, tgt)
+        metrics, state, logits = self.train_shmap(self.state, obs, tgt)
 
         # Replace params with previous params if NaN loss
         new_params = jax.tree_util.tree_map(
@@ -193,18 +191,15 @@ class CausalTransformer:
         obs = jnp.transpose(context, (1, 0))
         tgt = jnp.transpose(target, (1, 0))
 
-        with self.mesh:
-            return self.eval_shmap(self.state, obs, tgt, z_loss, mask)
+        return self.eval_shmap(self.state, obs, tgt, z_loss, mask)
 
     def generate(self, context, gen_length, temperature=1.0, top_k=20, top_p=0.9, callback=None):
         print("Starting generation...")
         obs = jnp.transpose(context, (1, 0))
 
-        with self.mesh:
-            return self.generate_shmap(self.state, obs, gen_length, temperature, top_k, top_p, callback)
+        return self.generate_shmap(self.state, obs, gen_length, temperature, top_k, top_p, callback)
 
     def move(self):
         print("Moving state to bf16...")
-        with self.mesh:
-            self.state = self.move_shmap(self.state, None)
+        self.state = self.move_shmap(self.state, None)
         print("State moved to bf16.")
