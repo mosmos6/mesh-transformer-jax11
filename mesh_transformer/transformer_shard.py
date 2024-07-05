@@ -134,15 +134,16 @@ class CausalTransformer:
         devices = mesh_utils.create_device_mesh((dp, mp))
         self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
-        def init_fn():
+        def init_fn(rng):
             sample = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
-            return CausalTransformerShard(config).init(jax.random.PRNGKey(0), sample, sample)
+            return CausalTransformerShard(config).init(rng, sample, sample)
 
-        transformed_init_fn = hk.transform(init_fn)
+        transformed_init_fn = hk.transform_with_state(init_fn)
 
-        self.init_shmap = shard_map(transformed_init_fn.init, in_specs=(), out_specs=(), mesh=self.mesh)
+        self.init_shmap = shard_map(transformed_init_fn.init, in_specs=(P(),), out_specs=(P(), P()), mesh=self.mesh)
 
-        self.state = self.init_shmap()
+        rng = jax.random.PRNGKey(0)
+        self.state, self.state = self.init_shmap(rng)
 
         def train_shard_fn(state, x, y):
             return CausalTransformerShard(config).train(x, y)
@@ -156,10 +157,10 @@ class CausalTransformer:
         def move_shard_fn(state, _):
             return jax.tree_map(lambda x: x.astype(jnp.bfloat16), state)
 
-        self.train_shmap = shard_map(train_shard_fn, in_specs=(None, 0, 0), out_specs=(None, 0), mesh=self.mesh)
-        self.eval_shmap = shard_map(eval_shard_fn, in_specs=(None, 0, 0, None, None), out_specs=(), mesh=self.mesh)
-        self.generate_shmap = shard_map(generate_shard_fn, in_specs=(None, 0, None, None, None, None), out_specs=(), mesh=self.mesh)
-        self.move_shmap = shard_map(move_shard_fn, in_specs=(None, None), out_specs=(None), mesh=self.mesh)
+        self.train_shmap = shard_map(train_shard_fn, in_specs=(P(), P(), P()), out_specs=(P(), P()), mesh=self.mesh)
+        self.eval_shmap = shard_map(eval_shard_fn, in_specs=(P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh)
+        self.generate_shmap = shard_map(generate_shard_fn, in_specs=(P(), P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh)
+        self.move_shmap = shard_map(move_shard_fn, in_specs=(P(), P()), out_specs=(P(),), mesh=self.mesh)
 
         self.opt = optax.chain(
             optax.clip_by_global_norm(1),
