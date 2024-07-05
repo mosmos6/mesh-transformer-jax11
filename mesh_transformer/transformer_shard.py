@@ -138,7 +138,9 @@ class CausalTransformer:
             sample = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
             return CausalTransformerShard(config).init(jax.random.PRNGKey(0), sample, sample)
 
-        self.init_shmap = shard_map(init_fn, in_specs=(), out_specs=(), mesh=self.mesh)
+        transformed_init_fn = hk.transform(init_fn)
+
+        self.init_shmap = shard_map(transformed_init_fn.init, in_specs=(), out_specs=(), mesh=self.mesh)
 
         self.state = self.init_shmap()
 
