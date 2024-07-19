@@ -322,7 +322,7 @@ class TransformerLayerShard(hk.Module):
         print("Before qvk_proj")
         print(f"x shape: {x.shape}")
 
-        x = f_psum(x)
+        x = jax.lax.psum(x, axis_name='dp')
         x = self.norm(x)
 
         q, v, k = self.qvk_proj(x)
@@ -337,10 +337,10 @@ class TransformerLayerShard(hk.Module):
         attn_out = self.self_attn(q, v, k, bias)
         dense_out = self.ff(x)
 
-        return g_psum(attn_out + dense_out)
+        return jax.lax.psum(attn_out + dense_out, axis_name='dp')
 
     def decode_once(self, decode_state, x, attn_bias):
-        x = f_psum(x)
+        x = jax.lax.psum(x, axis_name='dp')
         x = self.norm(x)
 
         assert x.shape[0] == 1
@@ -362,14 +362,14 @@ class TransformerLayerShard(hk.Module):
         attn_out = self.self_attn(q, v, k, bias)
         dense_out = self.ff(x)
 
-        return g_psum(attn_out + dense_out), {
+        return jax.lax.psum(attn_out + dense_out, axis_name='dp'), {
             "tokens_decoded": tokens_decoded,
             "k": k,
             "v": v
         }
 
     def get_init_decode_state(self, x, given_length, attn_bias):
-        x = f_psum(x)
+        x = jax.lax.psum(x, axis_name='dp')
         x = self.norm(x)
 
         q, v, k = self.qvk_proj(x)
@@ -387,7 +387,7 @@ class TransformerLayerShard(hk.Module):
         attn_out = self.self_attn(q, v, k, bias)
         dense_out = self.ff(x)
 
-        return g_psum(attn_out + dense_out), {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
+        return jax.lax.psum(attn_out + dense_out, axis_name='dp'), {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
 
 
 
