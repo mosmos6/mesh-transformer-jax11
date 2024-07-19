@@ -28,7 +28,6 @@ class CausalTransformerShard(hk.Module):
         self.embed = hk.Embed(vocab_size=config["n_vocab"], embed_dim=self.d_model)
         self.proj = ProjectionShard(config)
         self.rpe = None  # Adjust this based on your configuration
-        self.mesh = thread_resources.env.physical_mesh
         
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
@@ -75,12 +74,11 @@ class CausalTransformerShard(hk.Module):
 
         states = []
 
-        with thread_resources.env.physical_mesh:
-            for i, l in enumerate(self.transformer_layers):
-                print(f"Processing layer {i} in generate_initial")
-                res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
-                x = x + res
-                states.append(layer_state)
+        for i, l in enumerate(self.transformer_layers):
+            print(f"Processing layer {i} in generate_initial")
+            res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
+            x = x + res
+            states.append(layer_state)
 
         print("CausalTransformerShard generate_initial completed")
         return self.proj(x), (last.astype(jnp.uint32), states, hk.next_rng_key())
