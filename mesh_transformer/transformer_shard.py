@@ -29,7 +29,7 @@ class CausalTransformerShard(hk.Module):
         self.proj = ProjectionShard(config)
         self.rpe = None  # Adjust this based on your configuration
         self.mesh = thread_resources.env.physical_mesh
-
+        
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
 
