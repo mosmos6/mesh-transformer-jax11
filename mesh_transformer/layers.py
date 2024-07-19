@@ -9,21 +9,6 @@ from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
 from jax.experimental.shard_map import shard_map
 
-class SomeLayer(hk.Module):
-    def __init__(self, config, name=None):
-        super().__init__(name=name)
-        self.config = config
-        self.d_model = config["d_model"]
-        # Additional initialization code...
-
-    def get_init_decode_state(self, x, length, attn_bias):
-        # Assuming this method performs collective operations
-        print("Entering SomeLayer get_init_decode_state")
-        with thread_resources.env.physical_mesh:
-            # Example collective operation
-            x = jax.lax.psum(x, axis_name='mp')
-        # Additional computation code...
-        return x, some_state  # Adjust return values as per actual implementation
 
 
 class ReplicatedLayerNorm(hk.Module):
