@@ -24,10 +24,11 @@ class CausalTransformerShard(hk.Module):
         self.d_model = config["d_model"]
         self.n_heads = config["n_heads"]
         self.heads_per_shard = config["n_heads"] // config["cores_per_replica"]
-        self.transformer_layers = [SomeLayer(config) for _ in range(self.layers)]
-        # Additional initialization code...
-        self.mesh = thread_resources.env.physical_mesh  # Assuming we need to access the device mesh
-
+        self.transformer_layers = [TransformerLayerShard(config) for _ in range(self.layers)]
+        self.embed = hk.Embed(vocab_size=config["n_vocab"], embed_dim=self.d_model)
+        self.proj = ProjectionShard(config)
+        self.rpe = None  # Adjust this based on your configuration
+        self.mesh = thread_resources.env.physical_mesh
 
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
@@ -74,7 +75,7 @@ class CausalTransformerShard(hk.Module):
 
         states = []
 
-        with self.mesh:
+        with thread_resources.env.physical_mesh:
             for i, l in enumerate(self.transformer_layers):
                 print(f"Processing layer {i} in generate_initial")
                 res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
