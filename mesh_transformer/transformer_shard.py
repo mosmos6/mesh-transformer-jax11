@@ -17,29 +17,17 @@ from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 
 
 class CausalTransformerShard(hk.Module):
-    def __init__(self, config):
-        super().__init__()
-        heads = config["n_heads"]
-        shards = config["cores_per_replica"]
-        layer_count = config["layers"]
-        self.dim_per_shard = config["dim_per_shard"]
+    def __init__(self, config, name=None):
+        super().__init__(name=name)
+        self.config = config
+        self.layers = config["layers"]
+        self.d_model = config["d_model"]
+        self.n_heads = config["n_heads"]
+        self.heads_per_shard = config["n_heads"] // config["cores_per_replica"]
+        self.transformer_layers = [SomeLayer(config) for _ in range(self.layers)]
+        # Additional initialization code...
+        self.mesh = thread_resources.env.physical_mesh  # Assuming we need to access the device mesh
 
-        self.transformer_layers = []
-        self.heads = heads
-        self.heads_per_shard = heads // shards
-        self.embed = EmbeddingShard(config)
-
-        init_scale = 2. / layer_count
-
-        for i in range(layer_count):
-            self.transformer_layers.append(TransformerLayerShard(config, name=f"layer_{i}", init_scale=init_scale))
-
-        self.proj = ProjectionShard(config)
-
-        if config["pe"] == "t5":
-            self.rpe = RelativePositionEmbs()
-        else:
-            self.rpe = None
 
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
@@ -86,15 +74,16 @@ class CausalTransformerShard(hk.Module):
 
         states = []
 
-        for i, l in enumerate(self.transformer_layers):
-            print(f"Processing layer {i} in generate_initial")
-            res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
-            x = x + res
-            states.append(layer_state)
+        with self.mesh:
+            for i, l in enumerate(self.transformer_layers):
+                print(f"Processing layer {i} in generate_initial")
+                res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
+                x = x + res
+                states.append(layer_state)
 
         print("CausalTransformerShard generate_initial completed")
         return self.proj(x), (last.astype(jnp.uint32), states, hk.next_rng_key())
-
+        
     def generate_once(self, new_tok, state):
         print("Entering CausalTransformerShard generate_once")
         input_len = state[0]["v"].shape[0]
