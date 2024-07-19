@@ -319,24 +319,16 @@ class TransformerLayerShard(hk.Module):
         return q, v, k
 
     def __call__(self, x, attn_bias):
-        print("Before qvk_proj")
-        print(f"x shape: {x.shape}")
-
+        print(f"Available axis names: {self.mesh.axis_names}")  # Debug print
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
-
         q, v, k = self.qvk_proj(x)
-        print("After qvk_proj")
-        print(f"q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")
-
         seq_len = x.shape[0]
         causal_mask = np.tril(np.ones((seq_len, seq_len)))
         bias = -1e10 * (1. - causal_mask)
         bias += attn_bias
-
         attn_out = self.self_attn(q, v, k, bias)
         dense_out = self.ff(x)
-
         return jax.lax.psum(attn_out + dense_out, axis_name='mp')
 
     def decode_once(self, decode_state, x, attn_bias):
