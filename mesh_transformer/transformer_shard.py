@@ -17,14 +17,15 @@ from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 
 
 class CausalTransformerShard(hk.Module):
-    def __init__(self, config, name=None):
+    def __init__(self, config, mesh, name=None):
         super().__init__(name=name)
         self.config = config
+        self.mesh = mesh
         self.layers = config["layers"]
         self.d_model = config["d_model"]
         self.n_heads = config["n_heads"]
         self.heads_per_shard = config["n_heads"] // config["cores_per_replica"]
-        self.transformer_layers = [TransformerLayerShard(config) for _ in range(self.layers)]
+        self.transformer_layers = [TransformerLayerShard(config, mesh) for _ in range(self.layers)]
         self.embed = hk.Embed(vocab_size=config["n_vocab"], embed_dim=self.d_model)
         self.proj = ProjectionShard(config)
         self.rpe = None  # Adjust this based on your configuration
