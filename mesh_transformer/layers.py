@@ -9,7 +9,10 @@ from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
 from jax.experimental.shard_map import shard_map
 
-
+dp = jax.device_count() // config["cores_per_replica"]
+mp = config["cores_per_replica"]
+devices = mesh_utils.create_device_mesh((dp, mp))
+mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
 class ReplicatedLayerNorm(hk.Module):
     def __init__(self, offset=True):
