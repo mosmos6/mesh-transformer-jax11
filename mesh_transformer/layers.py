@@ -246,6 +246,8 @@ class EmbeddingShardV2(hk.Module):
 class TransformerLayerShard(hk.Module):
     def __init__(self, config, name=None, init_scale=1.):
         super().__init__(name=name)
+        self.config = config
+        self.mesh = mesh  # Correctly store the mesh
         heads = config["n_heads"]
         dim = config["d_model"]
         shards = config["cores_per_replica"]
