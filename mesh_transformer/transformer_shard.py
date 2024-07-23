@@ -25,7 +25,7 @@ class CausalTransformerShard(hk.Module):
         self.d_model = config["d_model"]
         self.n_heads = config["n_heads"]
         self.heads_per_shard = config["n_heads"] // config["cores_per_replica"]
-        self.transformer_layers = [TransformerLayerShard(config, name) for _ in range(self.layers)]
+        self.transformer_layers = [TransformerLayerShard(config, self.mesh) for _ in range(self.layers)]
         self.embed = hk.Embed(vocab_size=config["n_vocab"], embed_dim=self.d_model)
         self.proj = ProjectionShard(config)
         self.rpe = None  # Adjust this based on your configuration
