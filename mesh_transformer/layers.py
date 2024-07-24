@@ -244,7 +244,7 @@ class EmbeddingShardV2(hk.Module):
 
 
 class TransformerLayerShard(hk.Module):
-    def __init__(self, config, name=None, init_scale=1.):
+    def __init__(self, config, mesh, name=None, init_scale=1.):
         super().__init__(name=name)
         self.config = config
         self.mesh = mesh  # Correctly store the mesh
@@ -275,6 +275,7 @@ class TransformerLayerShard(hk.Module):
         self.dense_proj = hk.Linear(self.dim_per_shard * 4)
         self.dense_proj_o = hk.Linear(self.dim,
                                       w_init=hk.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
+
 
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
