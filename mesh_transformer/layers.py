@@ -365,8 +365,9 @@ class TransformerLayerShard(hk.Module):
         }
 
     def get_init_decode_state(self, x, given_length, attn_bias):
-        x = jax.lax.psum(x, axis_name='mp')
-        x = self.norm(x)
+        with self.mesh:
+            x = jax.lax.psum(x, axis_name='mp')
+            x = self.norm(x)
 
         q, v, k = self.qvk_proj(x)
 
