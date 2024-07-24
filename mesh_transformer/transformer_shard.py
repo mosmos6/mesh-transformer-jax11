@@ -20,7 +20,7 @@ class CausalTransformerShard(hk.Module):
     def __init__(self, config, name=None):
         super().__init__(name=name)
         self.config = config
-        self.mesh = mesh
+        self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(config["cores_per_replica"], -1), ("dp", "mp"))
         self.layers = config["layers"]
         self.d_model = config["d_model"]
         self.n_heads = config["n_heads"]
