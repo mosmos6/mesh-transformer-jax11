@@ -13,7 +13,7 @@ import numpy as np
 from mesh_transformer.util import to_f32, to_bf16, global_norm
 from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, RelativePositionEmbs, ProjectionShard
 from mesh_transformer.checkpoint import write_ckpt, read_ckpt
-from mesh_context_manager import MeshContextManager  # Import from new file
+from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
 
 
 
