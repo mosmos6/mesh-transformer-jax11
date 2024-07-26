@@ -364,7 +364,7 @@ class TransformerLayerShard(hk.Module):
             "v": v
         }
 
-    def get_init_decode_state(self, x, given_length, attn_bias):
+    def get_init_decode_state(self, x, given_length, attn_bias, mesh):
         mesh = self.mesh_manager.get_mesh()
         print(f"Mesh axis names at get_init_decode_state: {mesh.axis_names}")
         with mesh:
