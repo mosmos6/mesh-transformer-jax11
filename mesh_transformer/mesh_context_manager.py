@@ -1,3 +1,13 @@
+import haiku as hk
+import jax
+import jax.numpy as jnp
+import numpy as np
+import os
+from einops import rearrange, repeat
+from jax.experimental import mesh_utils
+from jax.experimental.shard_map import shard_map
+from jax.sharding import Mesh, PartitionSpec as P
+
 class MeshContextManager:
     def __init__(self, config):
         self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(config["cores_per_replica"], -1), ("dp", "mp"))
