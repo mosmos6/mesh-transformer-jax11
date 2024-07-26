@@ -8,6 +8,7 @@ from einops import rearrange, repeat
 from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
 from jax.experimental.shard_map import shard_map
+from transformer_shard import MeshContextManager
 
 
 
@@ -244,11 +245,10 @@ class EmbeddingShardV2(hk.Module):
 
 
 class TransformerLayerShard(hk.Module):
-    def __init__(self, config, name=None, init_scale=1.):
+    def __init__(self, config, mesh_manager, name=None, init_scale=1.):
         super().__init__(name=name)
         self.config = config
-        self.dim_per_shard = config["dim_per_shard"]
-        self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(config["cores_per_replica"], -1), ("dp", "mp"))
+        self.mesh_manager = mesh_manager
         heads = config["n_heads"]
         dim = config["d_model"]
         shards = config["cores_per_replica"]
