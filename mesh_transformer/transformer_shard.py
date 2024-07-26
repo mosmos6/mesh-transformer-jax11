@@ -29,15 +29,15 @@ class MeshContextManager:
         self.mesh.__exit__(exc_type, exc_val, exc_tb)
 
 class CausalTransformerShard(hk.Module):
-    def __init__(self, config, name=None):
+    def __init__(self, config, mesh_manager, name=None):
         super().__init__(name=name)
         self.config = config
-        self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(config["cores_per_replica"], -1), ("dp", "mp"))
+        self.mesh_manager = mesh_manager
         self.layers = config["layers"]
         self.d_model = config["d_model"]
         self.n_heads = config["n_heads"]
         self.heads_per_shard = config["n_heads"] // config["cores_per_replica"]
-        self.transformer_layers = [TransformerLayerShard(config, name=f"layer_{i}") for i in range(self.layers)]
+        self.transformer_layers = [TransformerLayerShard(config, mesh_manager, name=f"layer_{i}") for i in range(self.layers)]
         self.embed = hk.Embed(vocab_size=config["n_vocab"], embed_dim=self.d_model)
         self.proj = ProjectionShard(config)
         self.rpe = None  # Adjust this based on your configuration
