@@ -8,7 +8,7 @@ from einops import rearrange, repeat
 from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
 from jax.experimental.shard_map import shard_map
-from transformer_shard import MeshContextManager
+from mesh_transformer.transformer_shard import MeshContextManager
 
 
 
