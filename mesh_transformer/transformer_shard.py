@@ -76,14 +76,12 @@ class CausalTransformerShard(hk.Module):
         x = self.embed(context)
 
         states = []
-
         for i, l in enumerate(self.transformer_layers):
             print(f"Processing layer {i} in generate_initial")
             res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
             x = x + res
             states.append(layer_state)
 
-        print("CausalTransformerShard generate_initial completed")
         return self.proj(x), (last.astype(jnp.uint32), states, hk.next_rng_key())
         
     def generate_once(self, new_tok, state):
