@@ -368,7 +368,11 @@ class TransformerLayerShard(hk.Module):
         mesh = self.mesh_manager.get_mesh()
         print(f"Mesh axis names at get_init_decode_state: {mesh.axis_names}")
         with mesh:
-            x = jax.lax.psum(x, 'mp')
+            def _psum(x):
+            return jax.lax.psum(x, 'mp')
+        
+            # Apply pmap over the psum function
+            x = jax.pmap(_psum, axis_name='mp')(x)
             x = self.norm(x)
 
         q, v, k = self.qvk_proj(x)
