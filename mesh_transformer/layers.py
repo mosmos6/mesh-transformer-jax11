@@ -370,27 +370,28 @@ class TransformerLayerShard(hk.Module):
         print(f"Mesh devices: {mesh.devices}")
         print(f"Mesh axis names: {mesh.axis_names}")
 
-    with mesh:  # Ensure the mesh context is active
-        # Since pmap is already managing device parallelism, directly use psum
-        x = jax.lax.psum(x, 'mp')
-        x = self.norm(x)
+        with mesh:  # Ensure the mesh context is active
+            
+            # Since pmap is already managing device parallelism, directly use psum
+            x = jax.lax.psum(x, 'mp')
+            x = self.norm(x)
 
-    q, v, k = self.qvk_proj(x)
+        q, v, k = self.qvk_proj(x)
 
-    full_length = x.shape[0]
-    masked_tokens = full_length - given_length
+        full_length = x.shape[0]
+        masked_tokens = full_length - given_length
 
-    seq_len = x.shape[0]
-    causal_mask = np.tril(np.ones((seq_len, seq_len)))
+        seq_len = x.shape[0]
+        causal_mask = np.tril(np.ones((seq_len, seq_len)))
 
-    bias = -1e10 * (1. - causal_mask)
-    bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)
-    bias += attn_bias
+        bias = -1e10 * (1. - causal_mask)
+        bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)
+        bias += attn_bias
 
-    attn_out = self.self_attn(q, v, k, bias)
-    dense_out = self.ff(x)
+        attn_out = self.self_attn(q, v, k, bias)
+        dense_out = self.ff(x)
 
-    return attn_out + dense_out, {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
+        return attn_out + dense_out, {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
 
 
 
