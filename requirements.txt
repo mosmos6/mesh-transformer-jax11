@@ -1,4 +1,4 @@
-numpy==1.26.0
+numpy==1.25.2
 tqdm~=4.48.2
 wandb>=0.13.7,!=0.13.7
 einops~=0.3.0
@@ -12,11 +12,11 @@ jinja2~=3.0.0
 typing-extensions~=4.5.0
 google-api-core[grpc]
 fabric~=2.6.0
-optax==0.1.7
-dm-haiku==0.0.10
+optax==0.1.9
+dm-haiku==0.0.12
 ray[default]
-jax==0.4.23
-jaxlib==0.4.23
+jax==0.4.26
+jaxlib==0.4.26
 Flask==2.1.1 # changed on 28march
 cloudpickle~=1.5.0
 tensorflow==2.15.0
