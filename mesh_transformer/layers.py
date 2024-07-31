@@ -365,9 +365,10 @@ class TransformerLayerShard(hk.Module):
         }
 
     def get_init_decode_state(self, x, given_length, attn_bias):
-    mesh = self.mesh_manager.get_mesh()  # Use the already initialized MeshContextManager
-    print(f"Mesh devices: {mesh.devices}")
-    print(f"Mesh axis names: {mesh.axis_names}")
+        
+        mesh = self.mesh_manager.get_mesh()  # Use the already initialized MeshContextManager
+        print(f"Mesh devices: {mesh.devices}")
+        print(f"Mesh axis names: {mesh.axis_names}")
 
     with mesh:  # Ensure the mesh context is active
         # Since pmap is already managing device parallelism, directly use psum
