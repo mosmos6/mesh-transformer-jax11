@@ -364,33 +364,33 @@ class TransformerLayerShard(hk.Module):
             "v": v
         }
 
-    def get_init_decode_state(self, x, given_length, attn_bias, mesh):
-        mesh = self.mesh_manager.get_mesh()
-        print(f"Mesh axis names at get_init_decode_state: {mesh.axis_names}")
-        with mesh:
-            def _psum(x):
-                return jax.lax.psum(x, 'mp')
-        
-            # Apply pmap over the psum function
-            x = jax.pmap(_psum, axis_name='mp')(x)
-            x = self.norm(x)
+    def get_init_decode_state(self, x, given_length, attn_bias):
+    mesh = self.mesh_manager.get_mesh()  # Use the already initialized MeshContextManager
+    print(f"Mesh devices: {mesh.devices}")
+    print(f"Mesh axis names: {mesh.axis_names}")
 
-        q, v, k = self.qvk_proj(x)
+    with mesh:  # Ensure the mesh context is active
+        # Since pmap is already managing device parallelism, directly use psum
+        x = jax.lax.psum(x, 'mp')
+        x = self.norm(x)
 
-        full_length = x.shape[0]
-        masked_tokens = full_length - given_length
+    q, v, k = self.qvk_proj(x)
 
-        seq_len = x.shape[0]
-        causal_mask = np.tril(np.ones((seq_len, seq_len)))
+    full_length = x.shape[0]
+    masked_tokens = full_length - given_length
 
-        bias = -1e10 * (1. - causal_mask)
-        bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)
-        bias += attn_bias
+    seq_len = x.shape[0]
+    causal_mask = np.tril(np.ones((seq_len, seq_len)))
 
-        attn_out = self.self_attn(q, v, k, bias)
-        dense_out = self.ff(x)
+    bias = -1e10 * (1. - causal_mask)
+    bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)
+    bias += attn_bias
 
-        return jax.lax.psum(attn_out + dense_out, axis_name='mp'), {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
+    attn_out = self.self_attn(q, v, k, bias)
+    dense_out = self.ff(x)
+
+    return attn_out + dense_out, {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
+
 
 
 
