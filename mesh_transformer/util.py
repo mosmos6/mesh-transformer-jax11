@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
-from jax.experimental.pjit import with_sharding_constraint
-from optax import AdditiveWeightDecayState, GradientTransformation
+from jax.lax import with_sharding_constraint
+import optax
 from typing import NamedTuple
 import chex
 
@@ -38,7 +38,7 @@ class ClipByGlobalNormState(NamedTuple):
     """The `clip_by_global_norm` transformation is stateless."""
 
 
-def clip_by_global_norm(max_norm, use_psum=True) -> GradientTransformation:
+def clip_by_global_norm(max_norm, use_psum=True) -> optax.GradientTransformation:
     """Clip updates using their global norm.
 
     References:
@@ -62,27 +62,12 @@ def clip_by_global_norm(max_norm, use_psum=True) -> GradientTransformation:
             lambda t: jnp.where(trigger, t, (t / g_norm) * max_norm), updates)
         return updates, state
 
-    return GradientTransformation(init_fn, update_fn)
+    return optax.GradientTransformation(init_fn, update_fn)
 
 
-def additive_weight_decay(weight_decay: float = 0.0) -> GradientTransformation:
-    """Add parameter scaled by `weight_decay`, to all parameters with more than one dim (i.e. exclude ln, bias etc)
-
-    Args:
-      weight_decay: a scalar weight decay rate.
-
-    Returns:
-      An (init_fn, update_fn) tuple.
-    """
-
-    def init_fn(_):
-        return AdditiveWeightDecayState()
-
-    def update_fn(updates, state, params):
-        updates = jax.tree_map(lambda g, p: g + weight_decay * p * (len(g.shape) > 1), updates, params)
-        return updates, state
-
-    return GradientTransformation(init_fn, update_fn)
+# Use Optax's built-in additive weight decay
+def additive_weight_decay(weight_decay: float = 0.0) -> optax.GradientTransformation:
+    return optax.additive_weight_decay(weight_decay)
 
 
 def to_f32(t):
