@@ -8,9 +8,6 @@ from jax.sharding import NamedSharding, PartitionSpec as P
 from jax import devices
 from mesh_transformer.mesh_context_manager import MeshContextManager
 
-# Create a MeshContextManager instance with the appropriate configuration
-mesh_manager = MeshContextManager(config)
-
 
 def maybe_shard(x, partition_spec):
     try:
