@@ -4,13 +4,19 @@ from jax.lax import with_sharding_constraint
 import optax
 from typing import NamedTuple
 import chex
+from jax.sharding import NamedSharding, PartitionSpec as P
+from jax import devices
 
-# same as with_sharding_constraint but doesn't fail if run outside of pjit/mesh context
-def maybe_shard(x, resource):
+# Define the global mesh 
+mesh = Mesh(devices(), ('dp', 'mp'))
+
+def maybe_shard(x, partition_spec):
     try:
-        return with_sharding_constraint(x, resource)
+        # Use NamedSharding to apply sharding constraint
+        sharding = NamedSharding(mesh, partition_spec)
+        return with_sharding_constraint(x, sharding)
     except ValueError as e:
-        print(e)
+        print(f"Sharding error: {e}")
         return x
 
 
