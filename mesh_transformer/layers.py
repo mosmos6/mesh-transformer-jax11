@@ -373,8 +373,7 @@ class TransformerLayerShard(hk.Module):
         with mesh:  # Ensure the mesh context is active
                       
             print("Entering mesh context")
-            # Now using jax.pmap with psum
-            x = jax.pmap(lambda x: jax.lax.psum(x, 'mp'), axis_name='mp')(x)
+            x = jax.lax.psum(x, 'mp')
             x = self.norm(x)
 
         q, v, k = self.qvk_proj(x)
