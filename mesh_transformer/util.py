@@ -6,13 +6,15 @@ from typing import NamedTuple
 import chex
 from jax.sharding import NamedSharding, PartitionSpec as P
 from jax import devices
+from mesh_transformer.mesh_context_manager import MeshContextManager
 
-# Define the global mesh 
-mesh = Mesh(devices(), ('dp', 'mp'))
+# Create a MeshContextManager instance with the appropriate configuration
+mesh_manager = MeshContextManager(config)
+
 
 def maybe_shard(x, partition_spec):
     try:
-        # Use NamedSharding to apply sharding constraint
+        mesh = mesh_manager.get_mesh()
         sharding = NamedSharding(mesh, partition_spec)
         return with_sharding_constraint(x, sharding)
     except ValueError as e:
