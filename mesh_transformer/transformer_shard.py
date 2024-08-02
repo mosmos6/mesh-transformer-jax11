@@ -129,7 +129,7 @@ class CausalTransformer:
 
         transformed_init_fn = hk.transform_with_state(init_fn)
 
-        self.init_shmap = shard_map(transformed_init_fn.init, in_specs=(P(),), out_specs=(P(), P()), mesh=self.mesh)
+        self.init_shmap = shard_map(transformed_init_fn.init, in_specs=(P(),), out_specs=(P(), P()), mesh=self.mesh, check_rep=False)
 
         rng = jax.random.PRNGKey(0)
         self.state, self.state = self.init_shmap(rng)
@@ -146,10 +146,10 @@ class CausalTransformer:
         def move_shard_fn(state, _):
             return jax.tree_map(lambda x: x.astype(jnp.bfloat16), state)
 
-        self.train_shmap = shard_map(train_shard_fn, in_specs=(P(), P(), P()), out_specs=(P(), P()), mesh=self.mesh)
-        self.eval_shmap = shard_map(eval_shard_fn, in_specs=(P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh)
-        self.generate_shmap = shard_map(generate_shard_fn, in_specs=(P(), P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh)
-        self.move_shmap = shard_map(move_shard_fn, in_specs=(P(), P()), out_specs=(P(),), mesh=self.mesh)
+        self.train_shmap = shard_map(train_shard_fn, in_specs=(P(), P(), P()), out_specs=(P(), P()), mesh=self.mesh, check_rep=False)
+        self.eval_shmap = shard_map(eval_shard_fn, in_specs=(P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh, check_rep=False)
+        self.generate_shmap = shard_map(generate_shard_fn, in_specs=(P(), P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh, check_rep=False)
+        self.move_shmap = shard_map(move_shard_fn, in_specs=(P(), P()), out_specs=(P(),), mesh=self.mesh, check_rep=False)
 
         self.opt = optax.chain(
             optax.clip_by_global_norm(1),
