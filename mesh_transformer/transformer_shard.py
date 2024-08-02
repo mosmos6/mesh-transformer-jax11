@@ -123,33 +123,38 @@ class CausalTransformer:
         devices = mesh_utils.create_device_mesh((dp, mp))
         self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
+        # Define the init function
         def init_fn(rng):
             sample = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
             return CausalTransformerShard(config).init(rng, sample, sample)
 
-        transformed_init_fn = hk.transform_with_state(init_fn)
+        # Transform the function with Haiku to handle parameters
+        transformed_init_fn = hk.transform(init_fn)
 
+        # Set up shard_map with the correct input and output partition specs
         self.init_shmap = shard_map(transformed_init_fn.init, in_specs=(P(),), out_specs=(P(), P()), mesh=self.mesh, check_rep=False)
 
+        # Initialize RNG and create an initial sample input
         rng = jax.random.PRNGKey(0)
-        self.state, self.state = self.init_shmap(rng)
+        self.state, _ = self.init_shmap(rng)
 
         def train_shard_fn(state, x, y):
-            return CausalTransformerShard(config).train(x, y)
+            return CausalTransformerShard(config).train(state, x, y)
 
         def eval_shard_fn(state, x, y, z_loss, mask):
-            return CausalTransformerShard(config).eval(x, y, z_loss, mask)
+            return CausalTransformerShard(config).eval(state, x, y, z_loss, mask)
 
         def generate_shard_fn(state, x, gen_length, temperature, top_k, top_p, callback):
-            return CausalTransformerShard(config).generate(x, gen_length, temperature, top_k, top_p, callback)
+            return CausalTransformerShard(config).generate(state, x, gen_length, temperature, top_k, top_p, callback)
 
         def move_shard_fn(state, _):
             return jax.tree_map(lambda x: x.astype(jnp.bfloat16), state)
 
-        self.train_shmap = shard_map(train_shard_fn, in_specs=(P(), P(), P()), out_specs=(P(), P()), mesh=self.mesh, check_rep=False)
-        self.eval_shmap = shard_map(eval_shard_fn, in_specs=(P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh, check_rep=False)
-        self.generate_shmap = shard_map(generate_shard_fn, in_specs=(P(), P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh, check_rep=False)
-        self.move_shmap = shard_map(move_shard_fn, in_specs=(P(), P()), out_specs=(P(),), mesh=self.mesh, check_rep=False)
+        # Create shard_maps for different functionalities
+        self.train_shmap = shard_map(train_shard_fn, in_specs=(P(), P(), P()), out_specs=(P(), P()), mesh=self.mesh)
+        self.eval_shmap = shard_map(eval_shard_fn, in_specs=(P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh)
+        self.generate_shmap = shard_map(generate_shard_fn, in_specs=(P(), P(), P(), P(), P(), P()), out_specs=(P(),), mesh=self.mesh)
+        self.move_shmap = shard_map(move_shard_fn, in_specs=(P(), P()), out_specs=(P(),), mesh=self.mesh)
 
         self.opt = optax.chain(
             optax.clip_by_global_norm(1),
