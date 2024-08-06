@@ -109,7 +109,6 @@ class CausalTransformerShard(hk.Module):
 
 
 
-
 class CausalTransformer:
     def __init__(self, config):
         self.config = config
@@ -124,7 +123,7 @@ class CausalTransformer:
         self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
         # Define the init function
-        def init_fn(rng):
+        def init_fn(rng, x):
             sample = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
             return CausalTransformerShard(config).init(rng, sample, sample)
 
