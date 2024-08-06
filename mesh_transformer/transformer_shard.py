@@ -124,19 +124,25 @@ class CausalTransformer:
 
         # Define the init function
         def init_fn(rng, x):
-            sample = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
-            return CausalTransformerShard(config).init(rng, sample, sample)
+            return CausalTransformerShard(config).init(rng, x, x)
 
         # Transform the function with Haiku to handle parameters
         transformed_init_fn = hk.transform(init_fn)
 
         # Set up shard_map with the correct input and output partition specs
-        self.init_shmap = shard_map(transformed_init_fn.init, in_specs=(P(),), out_specs=(P(), P()), mesh=self.mesh, check_rep=False)
+        self.init_shmap = shard_map(transformed_init_fn.init, 
+                                    in_specs=(P(), P()), 
+                                    out_specs=(P(), P()), 
+                                    mesh=self.mesh, 
+                                    check_rep=False)
 
         # Initialize RNG and create an initial sample input
         rng = jax.random.PRNGKey(0)
-        self.state, _ = self.init_shmap(rng)
-
+        sample_input = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
+        
+        # Provide both rng and sample_input to the init_shmap
+        self.state, _ = self.init_shmap(rng, sample_input)
+        
         def train_shard_fn(state, x, y):
             return CausalTransformerShard(config).train(state, x, y)
 
