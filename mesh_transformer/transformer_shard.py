@@ -120,7 +120,7 @@ class CausalTransformer:
         devices = mesh_utils.create_device_mesh((dp, mp))
         self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
-        def init_fn(rng, x):
+        def init_fn(rng, x, x):
             transformer = CausalTransformerShard(config)
             return transformer.init(rng, x, x)
 
