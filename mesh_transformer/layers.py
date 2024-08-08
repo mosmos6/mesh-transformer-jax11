@@ -155,8 +155,19 @@ class EmbeddingShard:
 
         return proj_out
 
+import jax
+import jax.numpy as jnp
+import numpy as np
+from einops import rearrange, repeat
+
+from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
+from jax.sharding import PartitionSpec as P
+from jax.experimental.shard_map import shard_map
+from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
+
+
 class TransformerLayerShard:
-    def __init__(self, config, mesh_manager, init_scale=1.):
+    def __init__(self, config, mesh_manager, init_scale=1.0):
         self.config = config
         self.mesh_manager = mesh_manager
         heads = config["n_heads"]
@@ -176,14 +187,16 @@ class TransformerLayerShard:
 
         self.norm = norm
 
-        self.q = jax.nn.Dense(self.dim_per_shard, use_bias=False)
-        self.v = jax.nn.Dense(self.dim_per_shard, use_bias=False)
-        self.k = jax.nn.Dense(self.dim_per_shard, use_bias=False)
+        self.q = jax.nn.linear.DenseGeneral(self.dim_per_shard, use_bias=False)
+        self.v = jax.nn.linear.DenseGeneral(self.dim_per_shard, use_bias=False)
+        self.k = jax.nn.linear.DenseGeneral(self.dim_per_shard, use_bias=False)
 
-        self.o = jax.nn.Dense(self.dim, use_bias=False, kernel_initializer=jax.nn.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
+        self.o = jax.nn.linear.DenseGeneral(self.dim, use_bias=False,
+                                            kernel_init=jax.nn.initializers.truncated_normal(stddev=init_scale / np.sqrt(self.dim)))
 
-        self.dense_proj = jax.nn.Dense(self.dim_per_shard * 4)
-        self.dense_proj_o = jax.nn.Dense(self.dim, kernel_initializer=jax.nn.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
+        self.dense_proj = jax.nn.linear.DenseGeneral(self.dim_per_shard * 4)
+        self.dense_proj_o = jax.nn.linear.DenseGeneral(self.dim,
+                                                       kernel_init=jax.nn.initializers.truncated_normal(stddev=init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
@@ -230,7 +243,7 @@ class TransformerLayerShard:
         return q, v, k
 
     def __call__(self, x, attn_bias):
-        print(f"Available axis names: {self.mesh_manager.get_mesh().axis_names}")  # Debug print
+        print(f"Available axis names: {self.mesh.axis_names}")  # Debug print
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
         q, v, k = self.qvk_proj(x)
@@ -272,11 +285,13 @@ class TransformerLayerShard:
         }
 
     def get_init_decode_state(self, x, given_length, attn_bias):
+        
         mesh = self.mesh_manager.get_mesh()  # Use the already initialized MeshContextManager
         print(f"Mesh devices: {mesh.devices}")
         print(f"Mesh axis names: {mesh.axis_names}")
 
         with mesh:  # Ensure the mesh context is active
+                      
             print("Entering mesh context")
             x = jax.lax.psum(x, 'mp')
             x = self.norm(x)
