@@ -187,16 +187,15 @@ class TransformerLayerShard:
 
         self.norm = norm
 
-        self.q = jax.nn.linear.DenseGeneral(self.dim_per_shard, use_bias=False)
-        self.v = jax.nn.linear.DenseGeneral(self.dim_per_shard, use_bias=False)
-        self.k = jax.nn.linear.DenseGeneral(self.dim_per_shard, use_bias=False)
+        self.q = stax.Dense(self.dim_per_shard, W_init=jax.nn.initializers.normal(), b_init=None)
+        self.v = stax.Dense(self.dim_per_shard, W_init=jax.nn.initializers.normal(), b_init=None)
+        self.k = stax.Dense(self.dim_per_shard, W_init=jax.nn.initializers.normal(), b_init=None)
 
-        self.o = jax.nn.linear.DenseGeneral(self.dim, use_bias=False,
-                                            kernel_init=jax.nn.initializers.truncated_normal(stddev=init_scale / np.sqrt(self.dim)))
+        self.o = stax.Dense(self.dim, W_init=jax.nn.initializers.truncated_normal(stddev=init_scale / np.sqrt(self.dim)), b_init=None)
 
-        self.dense_proj = jax.nn.linear.DenseGeneral(self.dim_per_shard * 4)
-        self.dense_proj_o = jax.nn.linear.DenseGeneral(self.dim,
-                                                       kernel_init=jax.nn.initializers.truncated_normal(stddev=init_scale / np.sqrt(self.dim)))
+        self.dense_proj = stax.Dense(self.dim_per_shard * 4)
+        self.dense_proj_o = stax.Dense(self.dim,
+                                       W_init=jax.nn.initializers.truncated_normal(stddev=init_scale / np.sqrt(self.dim)), b_init=None)
 
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
@@ -312,6 +311,7 @@ class TransformerLayerShard:
         dense_out = self.ff(x)
 
         return attn_out + dense_out, {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
+
 
 def compute_shard_start_index(dim_per_shard):
     return jax.lax.axis_index('mp') * dim_per_shard
