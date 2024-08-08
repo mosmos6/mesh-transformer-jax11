@@ -1,20 +1,16 @@
-import haiku as hk
 import jax
 import jax.numpy as jnp
 import numpy as np
 import os
 from einops import rearrange, repeat
-
-from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
 from jax.experimental.shard_map import shard_map
+
+from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
 
-
-
-class ReplicatedLayerNorm(hk.Module):
+class ReplicatedLayerNorm:
     def __init__(self, offset=True):
-        super().__init__()
         self.offset = offset
 
     def __call__(self, inputs: jnp.ndarray) -> jnp.ndarray:
@@ -22,10 +18,10 @@ class ReplicatedLayerNorm(hk.Module):
         variance = jnp.var(inputs, axis=-1, keepdims=True)
 
         param_shape = inputs.shape[-1:]
-        scale = hk.get_parameter("scale", param_shape, inputs.dtype, init=jnp.ones)
+        scale = jnp.ones(param_shape, inputs.dtype)
         scale = jax.lax.all_gather(scale, "mp")[0]
 
-        offset = hk.get_parameter("offset", param_shape, inputs.dtype, init=jnp.zeros)
+        offset = jnp.zeros(param_shape, inputs.dtype)
         offset = jax.lax.all_gather(offset, "mp")[0]
 
         scale = jnp.broadcast_to(scale, inputs.shape)
@@ -38,10 +34,8 @@ class ReplicatedLayerNorm(hk.Module):
         else:
             return inv * (inputs - mean)
 
-
-class RMSNorm(hk.Module):
+class RMSNorm:
     def __init__(self, offset, elementwise):
-        super().__init__()
         self.offset = offset
         self.elementwise = elementwise
 
@@ -49,25 +43,20 @@ class RMSNorm(hk.Module):
         param_shape = (x.shape[-1],) if self.elementwise else ()
         normed = x / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-5)
 
-        scale = hk.get_parameter('scale', param_shape, init=hk.initializers.Constant(x.shape[-1] ** 0.5))
+        scale = jnp.full(param_shape, x.shape[-1] ** 0.5)
         scale = jax.lax.pmean(scale, "mp")
         normed = normed * scale
 
         if self.offset:
-            offset = hk.get_parameter('offset', param_shape, init=jnp.zeros)
+            offset = jnp.zeros(param_shape)
             offset = jax.lax.pmean(offset, "mp")
             normed = normed + offset
 
         return normed
 
-
 def getnorm(type):
     if type == "layernorm":
         return ReplicatedLayerNorm()
-    if type == "layernorm-desync":
-        return hk.LayerNorm(-1, True, True)
-    elif type == "layernorm-nobias":
-        return ReplicatedLayerNorm(offset=False)
     elif type == "rmsnorm":
         return RMSNorm(False, True)
     elif type == "scalenorm":
@@ -79,54 +68,34 @@ def getnorm(type):
     else:
         raise Exception("Not implemented")
 
-
-class RelativePositionEmbs(hk.Module):
+class RelativePositionEmbs:
     @staticmethod
-    def _relative_position_bucket(relative_position,
-                                  num_buckets=32,
-                                  max_distance=128):
+    def _relative_position_bucket(relative_position, num_buckets=32, max_distance=128):
         ret = 0
         n = -relative_position
         n = np.maximum(n, 0)
-        # now n is in the range [0, inf)
         max_exact = num_buckets // 2
         is_small = (n < max_exact)
         val_if_large = max_exact + (
-                np.log(n.astype(np.float32) / max_exact + np.finfo(np.float32).eps) /
-                np.log(max_distance / max_exact) *
-                (num_buckets - max_exact)).astype(np.int32)
+            np.log(n.astype(np.float32) / max_exact + np.finfo(np.float32).eps) /
+            np.log(max_distance / max_exact) *
+            (num_buckets - max_exact)).astype(np.int32)
         val_if_large = np.minimum(val_if_large, num_buckets - 1)
         ret += np.where(is_small, n, val_if_large)
         return ret
 
     def __call__(self, qlen, klen, heads, num_buckets):
-        """Produce relative position embedding attention biases.
-        Returns:
-          output: `(heads, q_len, k_len)` attention bias
-        """
         context_position = np.arange(qlen, dtype=jnp.int32)[:, None]
         memory_position = np.arange(klen, dtype=jnp.int32)[None, :]
-        relative_position = memory_position - context_position  # shape (qlen, klen)
+        relative_position = memory_position - context_position
         rp_bucket = self._relative_position_bucket(relative_position)
-        relative_attention_bias = hk.get_parameter('rel_embedding', [heads, num_buckets],
-                                                   init=hk.initializers.TruncatedNormal(stddev=0.02))
-        # Instead of using a slow gather, we create a leading-dimension one-hot
-        # array from rp_bucket and use it to perform the gather-equivalent via a
-        # contraction, i.e.:
-        # (num_head, num_buckets) x (num_buckets one-hot, qlen, klen).
-        # This is equivalent to relative_attention_bias[:, rp_bucket]
-        bcast_iota = jax.lax.broadcasted_iota(jnp.int32, (num_buckets, 1, 1), 0)
-        rp_bucket_one_hot = jnp.array(rp_bucket[jnp.newaxis, Ellipsis] == bcast_iota).astype(
-            relative_attention_bias.dtype)
-        # --> shape (qlen, klen, num_heads)
-        values = jax.lax.dot_general(
-            relative_attention_bias,
-            rp_bucket_one_hot,
-            (
-                ((1,), (0,)),  # rhs, lhs contracting dims
-                ((), ())))  # no batched dims
-        return values
+        relative_attention_bias = jnp.ones((heads, num_buckets)) * 0.02  # Initialize to some value
 
+        bcast_iota = jax.lax.broadcasted_iota(jnp.int32, (num_buckets, 1, 1), 0)
+        rp_bucket_one_hot = jnp.array(rp_bucket[jnp.newaxis, Ellipsis] == bcast_iota).astype(relative_attention_bias.dtype)
+        values = jax.lax.dot_general(relative_attention_bias, rp_bucket_one_hot,
+                                     (((1,), (0,)), ((), ())))
+        return values
 
 def fixed_pos_embedding(seq_len, dim):
     inv_freq = 1. / (10000 ** (np.arange(0, dim, 2) / dim))
@@ -138,39 +107,24 @@ def fixed_pos_embedding(seq_len, dim):
     cos = np.concatenate([cos, cos], axis=-1)
     return jnp.array(sin, dtype=jnp.float32), jnp.array(cos, dtype=jnp.float32)
 
-
-
-
 def rotate_every_two(x):
     x1 = x[:, :, :, ::2]
     x2 = x[:, :, :, 1::2]
-
     x = jnp.stack((-x2, x1), axis=-1)
-
     return rearrange(x, '... d j -> ... (d j)')
-
-
-
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
     seq_len, batch_size, num_heads, head_dim = x.shape
-    
-    # Adjust the sin and cos to match the dimensions of x
     sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)[:, :, :, :head_dim]
     cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)[:, :, :, :head_dim]
-
-    #print(f"apply_rotary_pos_emb: x.shape = {x.shape}, sin.shape = {sin.shape}, cos.shape = {cos.shape}")
-
     return (x * cos) + (rotate_every_two(x) * sin)
 
-
-class EmbeddingShard(hk.Module):
-    def __init__(self, config, name=None):
-        super().__init__(name=name)
-        in_dim = config["n_vocab"]
-        out_dim = config["d_model"]
-        shards = config["cores_per_replica"]
+class EmbeddingShard:
+    def __init__(self, n_vocab, d_model, cores_per_replica, seq_len, pe):
+        in_dim = n_vocab
+        out_dim = d_model
+        shards = cores_per_replica
 
         assert in_dim % shards == 0
 
@@ -179,13 +133,12 @@ class EmbeddingShard(hk.Module):
         self.in_dim_per_shard = in_dim // shards
         self.out_dim_per_shard = out_dim // shards
 
-        if config["pe"] == "fixed":
-            embed_init = hk.initializers.TruncatedNormal(stddev=0.02)
-            self.positional_embeddings = hk.get_parameter('pos_embs', [config["seq"], self.out_dim_per_shard], init=embed_init)
+        if pe == "fixed":
+            self.positional_embeddings = np.random.normal(0, 0.02, (seq_len, self.out_dim_per_shard))
         else:
             self.positional_embeddings = None
 
-        self.proj = hk.Linear(self.out_dim, w_init=hk.initializers.TruncatedNormal(stddev=1 / np.sqrt(in_dim)))
+        self.proj = jax.nn.Dense(self.out_dim)
 
     def __call__(self, x, dtype=jnp.bfloat16):
         shard_start_index = jax.lax.axis_index('mp') * self.in_dim_per_shard
@@ -197,17 +150,13 @@ class EmbeddingShard(hk.Module):
 
         if self.positional_embeddings is not None:
             all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'mp')
-
-            all_pos_embed = hk.Flatten()(jnp.transpose(all_pos_embed, (1, 0, 2)))
-
+            all_pos_embed = jnp.transpose(all_pos_embed, (1, 0, 2)).reshape(-1, self.out_dim_per_shard)
             proj_out += all_pos_embed
 
         return proj_out
 
-
-class TransformerLayerShard(hk.Module):
-    def __init__(self, config, mesh_manager, name=None, init_scale=1.):
-        super().__init__(name=name)
+class TransformerLayerShard:
+    def __init__(self, config, mesh_manager, init_scale=1.):
         self.config = config
         self.mesh_manager = mesh_manager
         heads = config["n_heads"]
@@ -227,17 +176,14 @@ class TransformerLayerShard(hk.Module):
 
         self.norm = norm
 
-        self.q = hk.Linear(self.dim_per_shard, with_bias=False)
-        self.v = hk.Linear(self.dim_per_shard, with_bias=False)
-        self.k = hk.Linear(self.dim_per_shard, with_bias=False)
+        self.q = jax.nn.Dense(self.dim_per_shard, use_bias=False)
+        self.v = jax.nn.Dense(self.dim_per_shard, use_bias=False)
+        self.k = jax.nn.Dense(self.dim_per_shard, use_bias=False)
 
-        self.o = hk.Linear(self.dim, with_bias=False,
-                           w_init=hk.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
+        self.o = jax.nn.Dense(self.dim, use_bias=False, kernel_initializer=jax.nn.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
 
-        self.dense_proj = hk.Linear(self.dim_per_shard * 4)
-        self.dense_proj_o = hk.Linear(self.dim,
-                                      w_init=hk.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
-
+        self.dense_proj = jax.nn.Dense(self.dim_per_shard * 4)
+        self.dense_proj_o = jax.nn.Dense(self.dim, kernel_initializer=jax.nn.initializers.TruncatedNormal(stddev=init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
@@ -284,7 +230,7 @@ class TransformerLayerShard(hk.Module):
         return q, v, k
 
     def __call__(self, x, attn_bias):
-        print(f"Available axis names: {self.mesh.axis_names}")  # Debug print
+        print(f"Available axis names: {self.mesh_manager.get_mesh().axis_names}")  # Debug print
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
         q, v, k = self.qvk_proj(x)
@@ -326,13 +272,11 @@ class TransformerLayerShard(hk.Module):
         }
 
     def get_init_decode_state(self, x, given_length, attn_bias):
-        
         mesh = self.mesh_manager.get_mesh()  # Use the already initialized MeshContextManager
         print(f"Mesh devices: {mesh.devices}")
         print(f"Mesh axis names: {mesh.axis_names}")
 
         with mesh:  # Ensure the mesh context is active
-                      
             print("Entering mesh context")
             x = jax.lax.psum(x, 'mp')
             x = self.norm(x)
@@ -354,16 +298,11 @@ class TransformerLayerShard(hk.Module):
 
         return attn_out + dense_out, {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
 
-
-
 def compute_shard_start_index(dim_per_shard):
     return jax.lax.axis_index('mp') * dim_per_shard
 
-
-
-class ProjectionShard(hk.Module):
-    def __init__(self, config, name=None):
-        super().__init__(name=name)
+class ProjectionShard:
+    def __init__(self, config):
         self.dim_per_shard = config["dim_per_shard"]
         self.out_dim = config["out_dim"]
         self.shards = config["cores_per_replica"]
@@ -388,23 +327,15 @@ class ProjectionShard(hk.Module):
         return -(softmax_logits.mean() + z_loss_penalty), jnp.argmax(logits, axis=-1) == target
 
     def forward(self, x):
-        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
-        x = hk.Linear(self.out_dim)(x)
+        x = jax.nn.LayerNorm(axis=-1, create_scale=True, create_offset=True)(x)
+        x = jax.nn.Dense(self.out_dim)(x)
         return x
 
-
-
-
-
-class Projection(hk.Module):
-    def __init__(self, config, name=None):
-        super().__init__(name=name)
-        out_dim = config["n_vocab"]
-
-        self.dim = out_dim
-        self.norm = hk.LayerNorm(-1, True, True)
-
-        self.proj = hk.Linear(self.dim)
+class Projection:
+    def __init__(self, config):
+        self.dim = config["n_vocab"]
+        self.norm = jax.nn.LayerNorm(axis=-1, create_scale=True, create_offset=True)
+        self.proj = jax.nn.Dense(self.dim)
 
     def __call__(self, x):
         x = self.norm(x)
