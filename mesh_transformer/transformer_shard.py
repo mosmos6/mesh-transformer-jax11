@@ -30,10 +30,15 @@ class CausalTransformerShard(nn.Module):
         self.proj = ProjectionShard(config=self.config)
 
     def __call__(self, x):
-        # This method should define how to use the initialized model for a forward pass.
         x = self.embed(x)
+        
+        # Calculate attn_bias
+        input_len = x.shape[0]
+        attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # Assuming a simple zero bias
+        
         for layer in self.transformer_layers:
-            x = layer(x)
+            x = layer(x, attn_bias)
+        
         return self.proj(x)
 
     def eval(self, context, target, z_loss=0., mask=0.0):
