@@ -18,17 +18,20 @@ from mesh_transformer.mesh_context_manager import MeshContextManager  # Import f
 
 class CausalTransformerShard(nn.Module):
     config: dict
-    mesh_manager: MeshContextManager
+    mesh_manager: object
 
     def setup(self):
         self.layers = self.config["layers"]
         self.d_model = self.config["d_model"]
         self.n_heads = self.config["n_heads"]
         self.heads_per_shard = self.config["n_heads"] // self.config["cores_per_replica"]
-        self.transformer_layers = [TransformerLayerShard(self.config, self.mesh_manager) for _ in range(self.layers)]
+        self.transformer_layers = [TransformerLayerShard(config=self.config, mesh_manager=self.mesh_manager) for _ in range(self.layers)]
         self.embed = nn.Embed(self.config["n_vocab"], self.d_model)
-        self.proj = ProjectionShard(self.config)
-        self.rpe = None  # Adjust this based on your configuration
+        self.proj = ProjectionShard(config=self.config)
+
+    def __call__(self, rng, x):
+        # Initialize the model with the given input x
+        return self.init(rng, x, x)
 
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
@@ -108,12 +111,11 @@ class CausalTransformer:
         dp = jax.device_count() // config["cores_per_replica"]
         mp = config["cores_per_replica"]
 
-        # Initialize MeshContextManager with dp and mp
         mesh_manager = MeshContextManager(dp, mp)
 
         def init_fn(rng, x):
-            transformer = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
-            return transformer.init(rng, x, x)
+            model = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
+            return model.init(rng, x)  # This should initialize the model with x
 
         self.init_shmap = shard_map(
             init_fn,
