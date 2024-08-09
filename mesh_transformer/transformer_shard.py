@@ -111,8 +111,11 @@ class CausalTransformer:
         devices = mesh_utils.create_device_mesh((dp, mp))
         self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
+        # Initialize MeshContextManager
+        mesh_manager = MeshContextManager(self.mesh)
+
         def init_fn(rng, x):
-            transformer = CausalTransformerShard(config)
+            transformer = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
             return transformer.init(rng, x, x)
 
         self.init_shmap = shard_map(
@@ -129,7 +132,7 @@ class CausalTransformer:
 
         def train_fn(state, ctx, tgt):
             def train_loss(x, y):
-                transformer = CausalTransformerShard(config)
+                transformer = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
                 out = transformer.loss(x, y, z_loss=True)
                 return out["loss"], out["last_loss"]
 
