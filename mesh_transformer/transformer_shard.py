@@ -29,9 +29,12 @@ class CausalTransformerShard(nn.Module):
         self.embed = nn.Embed(self.config["n_vocab"], self.d_model)
         self.proj = ProjectionShard(config=self.config)
 
-    def __call__(self, rng, x):
-        # Initialize the model with the given input x
-        return self.init(rng, x, x)
+    def __call__(self, x):
+        # This method should define how to use the initialized model for a forward pass.
+        x = self.embed(x)
+        for layer in self.transformer_layers:
+            x = layer(x)
+        return self.proj(x)
 
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
@@ -128,7 +131,7 @@ class CausalTransformer:
         rng = jax.random.PRNGKey(0)
         sample_input = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
         self.state, _ = self.init_shmap(rng, sample_input)
-
+        
         def train_fn(state, ctx, tgt):
             def train_loss(x, y):
                 transformer = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
