@@ -237,11 +237,11 @@ class TransformerLayerShard(nn.Module):
         print(f"attn_bias shape: {attn_bias.shape}")
 
         # Attempt to align the shapes for broadcasting
-        if attention_logits.shape != attn_bias.shape:
+        if attention_logits.shape[1:] != attn_bias.shape:
             
             print("Shapes are incompatible for broadcasting. Trying to reshape attn_bias...")
             # Reshape or repeat attn_bias to match attention_logits, depending on what is intended
-            attn_bias = jnp.reshape(attn_bias, attention_logits.shape)
+            attn_bias = jnp.reshape(attn_bias, attention_logits.shape[1:])
 
         attention_logits += attn_bias
 
