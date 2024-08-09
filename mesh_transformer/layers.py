@@ -178,8 +178,8 @@ class EmbeddingShard(nn.Module):
 
 class TransformerLayerShard(nn.Module):
     config: dict
-    mesh_manager: object
-    init_scale: float = 1.
+    mesh_manager: MeshContextManager
+    init_scale: float = 1.0
 
     def setup(self):
         heads = self.config["n_heads"]
@@ -187,6 +187,9 @@ class TransformerLayerShard(nn.Module):
         shards = self.config["cores_per_replica"]
         norm = getnorm(self.config["norm"])
         self.is_rotary = self.config["pe"] == "rotary"
+
+        assert dim % heads == 0
+        assert heads % shards == 0
 
         self.dim = dim
         self.dim_per_head = dim // heads
@@ -199,17 +202,11 @@ class TransformerLayerShard(nn.Module):
         self.q = nn.Dense(self.dim_per_shard, use_bias=False)
         self.v = nn.Dense(self.dim_per_shard, use_bias=False)
         self.k = nn.Dense(self.dim_per_shard, use_bias=False)
-        self.o = nn.Dense(self.dim, use_bias=False)
-        self.dense_proj = nn.Dense(self.dim_per_shard * 4)
-        self.dense_proj_o = nn.Dense(self.dim)
 
-    def __call__(self, x, attn_bias):
-        x = jax.lax.psum(x, axis_name='mp')
-        x = self.norm(x)
-        q, v, k = self.qvk_proj(x)
-        attn_out = self.self_attn(q, v, k, attn_bias)
-        dense_out = self.ff(x)
-        return jax.lax.psum(attn_out + dense_out, axis_name='mp')
+        self.o = nn.Dense(self.dim, use_bias=False, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
+
+        self.dense_proj = nn.Dense(self.dim_per_shard * 4)
+        self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
@@ -256,11 +253,7 @@ class TransformerLayerShard(nn.Module):
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
         q, v, k = self.qvk_proj(x)
-        seq_len = x.shape[0]
-        causal_mask = np.tril(np.ones((seq_len, seq_len)))
-        bias = -1e10 * (1. - causal_mask)
-        bias += attn_bias
-        attn_out = self.self_attn(q, v, k, bias)
+        attn_out = self.self_attn(q, v, k, attn_bias)
         dense_out = self.ff(x)
         return jax.lax.psum(attn_out + dense_out, axis_name='mp')
 
