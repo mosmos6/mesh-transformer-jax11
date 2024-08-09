@@ -105,14 +105,11 @@ class CausalTransformer:
         self.config = config
         optimizer = config["optimizer"]
 
-        # Define the device mesh
         dp = jax.device_count() // config["cores_per_replica"]
         mp = config["cores_per_replica"]
-        devices = mesh_utils.create_device_mesh((dp, mp))
-        self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
-        # Initialize MeshContextManager
-        mesh_manager = MeshContextManager(self.mesh)
+        # Initialize MeshContextManager with dp and mp
+        mesh_manager = MeshContextManager(dp, mp)
 
         def init_fn(rng, x):
             transformer = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
@@ -122,7 +119,7 @@ class CausalTransformer:
             init_fn,
             in_specs=(P(), P()),
             out_specs=(P(), P()),
-            mesh=self.mesh,
+            mesh=mesh_manager.get_mesh(),
             check_rep=False
         )
 
@@ -169,7 +166,7 @@ class CausalTransformer:
             train_fn,
             in_specs=(P(), P(), P()),
             out_specs=(P(), P()),
-            mesh=self.mesh,
+            mesh=mesh_manager.get_mesh(),
             check_rep=False
         )
 
