@@ -2,6 +2,7 @@ from functools import partial
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P
 from jax.experimental.shard_map import shard_map
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
@@ -14,24 +15,26 @@ from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, Relat
 from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
 
-class CausalTransformerShard:
-    def __init__(self, config, mesh_manager):
-        self.config = config
-        self.mesh_manager = mesh_manager
-        self.layers = config["layers"]
-        self.d_model = config["d_model"]
-        self.n_heads = config["n_heads"]
-        self.heads_per_shard = config["n_heads"] // config["cores_per_replica"]
-        self.transformer_layers = [TransformerLayerShard(config, mesh_manager) for i in range(self.layers)]
-        self.embed = EmbeddingShard(config["n_vocab"], self.d_model)
-        self.proj = ProjectionShard(config)
+
+class CausalTransformerShard(nn.Module):
+    config: dict
+    mesh_manager: MeshContextManager
+
+    def setup(self):
+        self.layers = self.config["layers"]
+        self.d_model = self.config["d_model"]
+        self.n_heads = self.config["n_heads"]
+        self.heads_per_shard = self.config["n_heads"] // self.config["cores_per_replica"]
+        self.transformer_layers = [TransformerLayerShard(self.config, self.mesh_manager) for _ in range(self.layers)]
+        self.embed = nn.Embed(self.config["n_vocab"], self.d_model)
+        self.proj = ProjectionShard(self.config)
         self.rpe = None  # Adjust this based on your configuration
-        
+
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
 
         if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
         else:
             attn_bias = 0
 
@@ -42,9 +45,8 @@ class CausalTransformerShard:
         for l in self.transformer_layers:
             x = x + l(x, attn_bias)
 
-        with self.proj.mesh:
-            shard_start_index = jax.lax.axis_index('mp') * self.config["dim_per_shard"]
-            return self.proj.loss(x, target, shard_start_index, z_loss)
+        shard_start_index = compute_shard_start_index(self.proj.dim_per_shard)
+        return self.proj.loss(x, target, shard_start_index, z_loss)
 
     def loss(self, ctx, tgt, z_loss=False, mask=0.0):
         loss, correct = self.eval(ctx, tgt, float(z_loss), mask=mask)
@@ -57,14 +59,13 @@ class CausalTransformerShard:
         }
 
     def generate_initial(self, context, length):
-        print("Entering CausalTransformerShard generate_initial")
         last = context[-1:]
         context = context[:-1]
 
         input_len = context.shape[0]
 
         if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
         else:
             attn_bias = 0
 
@@ -72,19 +73,17 @@ class CausalTransformerShard:
 
         states = []
         for i, l in enumerate(self.transformer_layers):
-            print(f"Processing layer {i} in generate_initial")
             res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
             x = x + res
             states.append(layer_state)
 
         return self.proj(x), (last.astype(jnp.uint32), states, jax.random.PRNGKey(0))
-        
+
     def generate_once(self, new_tok, state):
-        print("Entering CausalTransformerShard generate_once")
         input_len = state[0]["v"].shape[0]
 
         if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
             attn_bias = attn_bias[:, -1:, :]
         else:
             attn_bias = 0
@@ -94,13 +93,12 @@ class CausalTransformerShard:
         new_states = []
 
         for i, (l, s) in enumerate(zip(self.transformer_layers, state)):
-            print(f"Processing layer {i} in generate_once")
             res, layer_state = l.decode_once(s, x, attn_bias)
             x = x + res
             new_states.append(layer_state)
 
-        print("CausalTransformerShard generate_once completed")
         return self.proj(x), new_states
+
 
 class CausalTransformer:
     def __init__(self, config):
@@ -114,8 +112,8 @@ class CausalTransformer:
         self.mesh = Mesh(devices, axis_names=('dp', 'mp'))
 
         def init_fn(rng, x):
-            transformer = CausalTransformerShard(config, self.mesh)
-            return transformer.init(rng, x)
+            transformer = CausalTransformerShard(config)
+            return transformer.init(rng, x, x)
 
         self.init_shmap = shard_map(
             init_fn,
@@ -130,22 +128,22 @@ class CausalTransformer:
         self.state, _ = self.init_shmap(rng, sample_input)
 
         def train_fn(state, ctx, tgt):
-            def train_loss(params, x, y):
-                transformer = CausalTransformerShard(config, self.mesh)
+            def train_loss(x, y):
+                transformer = CausalTransformerShard(config)
                 out = transformer.loss(x, y, z_loss=True)
                 return out["loss"], out["last_loss"]
 
             def microbatch(old_grad, batch):
                 ctx, tgt = batch
                 val_grad_fn = jax.value_and_grad(train_loss, has_aux=True)
-                (loss, last_loss), grad = val_grad_fn(state["params"], ctx, tgt)
+                (loss, last_loss), grad = val_grad_fn(to_bf16(state["params"]), ctx, tgt)
                 new_grad = jax.tree_map(lambda a, b: a + b, old_grad, grad)
                 gnorm = global_norm(grad)
                 return new_grad, (loss, last_loss, gnorm)
 
             if ctx.shape[0] == 1:
                 val_grad_fn = jax.value_and_grad(train_loss, has_aux=True)
-                (loss, last_loss), grad = val_grad_fn(state["params"], ctx[0], tgt[0])
+                (loss, last_loss), grad = val_grad_fn(to_bf16(state["params"]), ctx[0], tgt[0])
                 gnorm = global_norm(grad)
             else:
                 grad, (loss, last_loss, gnorm) = jax.lax.scan(microbatch,
@@ -158,8 +156,8 @@ class CausalTransformer:
             grad_norm = global_norm(grad)
             updates, new_opt_state = optimizer.update(grad, state["opt_state"], state["params"])
 
-            return loss, last_loss, grad_norm, grad_norm_micro, {
-                "params": optax.apply_updates(state["params"], updates),
+            return to_f32(loss), to_f32(last_loss), to_f32(grad_norm), to_f32(grad_norm_micro), {
+                "params": optax.apply_updates(state["params"], to_f32(updates)),
                 "step": state["step"] + 1,
                 "opt_state": new_opt_state
             }
@@ -167,56 +165,7 @@ class CausalTransformer:
         self.train_shmap = shard_map(
             train_fn,
             in_specs=(P(), P(), P()),
-            out_specs=(P(), P(), P(), P(), P()),
-            mesh=self.mesh,
-            check_rep=False
-        )
-
-        def eval_fn(state, ctx, tgt, mask):
-            transformer = CausalTransformerShard(self.config, self.mesh)
-            return transformer.eval(ctx, tgt, mask=mask)
-
-        self.eval_shmap = shard_map(
-            eval_fn,
-            in_specs=(P(), P(), P(), P()),
-            out_specs=(P(),),
-            mesh=self.mesh,
-            check_rep=False
-        )
-
-        def generate_fn(state, key, ctx, ctx_length, aux, sampler_options):
-            def generate_sample(params, context, ctx_length, aux):
-                transformer = CausalTransformerShard(self.config, self.mesh)
-                _, initial_state = transformer.generate_initial(context, ctx_length)
-
-                def generate_scan_fn(carry, sampler_input):
-                    next_token, decode_state, sample_key = carry
-                    sample_key, new_key = jax.random.split(sample_key)
-
-                    logits, new_state = transformer.generate_once(next_token, decode_state)
-                    next_token, sample_info = self.config["sampler"](sample_key, logits, sampler_input, **sampler_options)
-
-                    output = (next_token, sample_info, logits) if return_logits else (next_token, sample_info)
-                    new_carry = (next_token, new_state, new_key)
-                    return new_carry, output
-
-                final_state, outputs = jax.lax.scan(generate_scan_fn, initial_state, xs=aux, length=gen_length)
-                return final_state, outputs
-
-            return generate_sample(state["params"], ctx, ctx_length, aux)
-
-        self.generate_shmap = shard_map(
-            generate_fn,
-            in_specs=(P(), P(), P(), P(), P(), P()),
             out_specs=(P(), P()),
-            mesh=self.mesh,
-            check_rep=False
-        )
-
-        self.move_shmap = shard_map(
-            lambda x, _: to_bf16(x),
-            in_specs=(P(), P()),
-            out_specs=(P(),),
             mesh=self.mesh,
             check_rep=False
         )
@@ -229,18 +178,41 @@ class CausalTransformer:
         return loss.mean(), last_loss.mean(), grad_norm.mean(), grad_norm_micro.mean()
 
     def eval(self, sample):
+        def eval_loss(x, y, mask):
+            transformer = CausalTransformerShard(self.config)
+            return transformer.loss(x, y, mask=mask)
+
         ctx = jnp.transpose(sample["obs"], (1, 0))
         tgt = jnp.transpose(sample["target"], (1, 0))
         ctx_length = sample.get("ctx_length", np.array([len(sample["obs"][0])] * len(sample["obs"])))
         mask = (jnp.arange(0, len(ctx)) > ctx_length) * -1e10
 
-        return self.eval_shmap(self.state, ctx, tgt, mask)
+        return eval_loss(to_bf16(self.state["params"]), ctx, tgt, mask)
 
     def generate(self, ctx, ctx_length, gen_length, sampler_options, return_logits=False):
+        def generate_sample(context, ctx_length, aux):
+            transformer = CausalTransformerShard(self.config)
+            _, initial_state = transformer.generate_initial(context, ctx_length)
+
+            def generate_scan_fn(carry, sampler_input):
+                next_token, decode_state, sample_key = carry
+                sample_key, new_key = jax.random.split(sample_key)
+
+                logits, new_state = transformer.generate_once(next_token, decode_state)
+                next_token, sample_info = self.config["sampler"](sample_key, logits, sampler_input, **sampler_options)
+
+                output = (next_token, sample_info, logits) if return_logits else (next_token, sample_info)
+                new_carry = (next_token, new_state, new_key)
+                return new_carry, output
+
+            final_state, outputs = jax.lax.scan(generate_scan_fn, initial_state, xs=aux, length=gen_length)
+            return final_state, outputs
+
+        generate_fn = nn.compact(generate_sample).apply
         key = jax.random.PRNGKey(0)
         aux = jnp.zeros((ctx.shape[0], gen_length), dtype=jnp.uint32)
 
-        return self.generate_shmap(self.state, key, jnp.transpose(ctx, (1, 0)), ctx_length, aux, sampler_options)
+        return generate_fn(self.state["params"], key, jnp.transpose(ctx, (1, 0)), ctx_length, aux)
 
     def move(self):
         self.state = self.move_shmap(self.state, None)
