@@ -209,7 +209,9 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
+        
         if self.is_rotary:
+            
             k_rot = k[:, :, :, :self.pe_rotary_dims]
             k_pass = k[:, :, :, self.pe_rotary_dims:]
 
@@ -229,6 +231,17 @@ class TransformerLayerShard(nn.Module):
 
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
+
+        # Debug print statements to check shapes
+        print(f"attention_logits shape: {attention_logits.shape}")
+        print(f"attn_bias shape: {attn_bias.shape}")
+
+        # Attempt to align the shapes for broadcasting
+        if attention_logits.shape != attn_bias.shape:
+            
+            print("Shapes are incompatible for broadcasting. Trying to reshape attn_bias...")
+            # Reshape or repeat attn_bias to match attention_logits, depending on what is intended
+            attn_bias = jnp.reshape(attn_bias, attention_logits.shape)
 
         attention_logits += attn_bias
 
