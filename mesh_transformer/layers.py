@@ -244,6 +244,12 @@ class TransformerLayerShard(nn.Module):
         attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
         print(f"attention_logits shape after einsum: {attention_logits.shape}")
 
+        # The correct shape for attention_logits should be (batch_size, heads_per_shard, seq_len, seq_len)
+        if attention_logits.shape[0] != q.shape[1]:  # Check batch size
+            
+            print("Mismatch in batch size, attempting to reshape...")
+            attention_logits = attention_logits.reshape((q.shape[1], q.shape[2], q.shape[0], k.shape[0]))
+
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
 
