@@ -220,6 +220,9 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
+        # Verify the shapes of q, v, and k
+        print(f"q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
+
         
         if self.is_rotary:
             
@@ -239,17 +242,20 @@ class TransformerLayerShard(nn.Module):
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
         attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
-        print(f"attention_logits shape: {attention_logits.shape}")  # Debugging print
+        print(f"attention_logits shape after einsum: {attention_logits.shape}")
 
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
 
         print(f"attn_bias shape: {attn_bias.shape}")  # Debugging print
+        # Check the batch size dimension and broadcast if necessary
+        if attn_bias.shape[0] != attention_logits.shape[1]:
+            attn_bias = jnp.broadcast_to(attn_bias, attention_logits.shape)
+        print(f"Rechecked attn_bias shape: {attn_bias.shape}")
+
+        # Ensure the shapes are still compatible
         if attention_logits.shape[1:] != attn_bias.shape:
             
-            print("Shapes are incompatible for broadcasting. Rechecking dimensions...")
-            print(f"attention_logits shape: {attention_logits.shape}")
-            print(f"attn_bias shape: {attn_bias.shape}")
             raise ValueError(f"Shapes are incompatible: attention_logits {attention_logits.shape}, attn_bias {attn_bias.shape}")
 
         attention_logits += attn_bias
