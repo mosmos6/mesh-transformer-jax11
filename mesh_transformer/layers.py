@@ -239,20 +239,18 @@ class TransformerLayerShard(nn.Module):
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
         attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
+        print(f"attention_logits shape: {attention_logits.shape}")  # Debugging print
 
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
 
-        # Debug print statements to check shapes
-        print(f"attention_logits shape: {attention_logits.shape}")
-        print(f"attn_bias shape: {attn_bias.shape}")
-
-        # Attempt to align the shapes for broadcasting
+        print(f"attn_bias shape: {attn_bias.shape}")  # Debugging print
         if attention_logits.shape[1:] != attn_bias.shape:
             
-            print("Shapes are incompatible for broadcasting. Trying to reshape attn_bias...")
-            # Reshape or repeat attn_bias to match attention_logits, depending on what is intended
-            attn_bias = jnp.reshape(attn_bias, attention_logits.shape[1:])
+            print("Shapes are incompatible for broadcasting. Rechecking dimensions...")
+            print(f"attention_logits shape: {attention_logits.shape}")
+            print(f"attn_bias shape: {attn_bias.shape}")
+            raise ValueError(f"Shapes are incompatible: attention_logits {attention_logits.shape}, attn_bias {attn_bias.shape}")
 
         attention_logits += attn_bias
 
