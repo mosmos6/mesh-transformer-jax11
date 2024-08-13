@@ -163,8 +163,9 @@ class EmbeddingShard(nn.Module):
     def __call__(self, x, dtype=jnp.bfloat16):
         shard_start_index = jax.lax.axis_index('mp') * self.in_dim_per_shard
 
-        input_onehot = jax.nn.one_hot(x - shard_start_index, self.in_dim_per_shard)
-        proj_out = self.proj(input_onehot)
+        # Ensure x-shard_start_index doesn't underflow and wrap around
+        one_hot_input = jax.nn.one_hot(jnp.clip(x - shard_start_index, 0, self.in_dim_per_shard - 1), self.in_dim_per_shard)
+        proj_out = self.proj(one_hot_input)
 
         proj_out = g_psum(proj_out)
 
@@ -173,8 +174,18 @@ class EmbeddingShard(nn.Module):
             all_pos_embed = all_pos_embed.reshape(self.config["seq"], -1)
             proj_out += all_pos_embed
 
-        return proj_out
+        # Handle rotary embeddings
+        if self.config["pe"] == "rotary":
+            seq_len = x.shape[0]
+            num_heads = self.config["n_heads"]
+            dim_per_head = self.config["d_head"]
+            pe_rotary_dims = self.config.get("pe_rotary_dims", dim_per_head)
 
+            # Ensure sincos embedding shapes match the expected dimension
+            sincos = fixed_pos_embedding(seq_len, pe_rotary_dims)
+            proj_out = apply_rotary_pos_emb(proj_out, sincos)
+
+        return proj_out
 
 class TransformerLayerShard(nn.Module):
     config: dict
