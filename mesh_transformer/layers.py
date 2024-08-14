@@ -241,6 +241,7 @@ class TransformerLayerShard(nn.Module):
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
+        print(f"after concatenate q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
         # Reshape q and k to ensure the batch dimension is handled properly
         q = q.reshape((q.shape[1], q.shape[0], q.shape[2], -1))  # (batch_size, seq_len, heads_per_shard, dim_per_head)
         k = k.reshape((k.shape[1], k.shape[0], k.shape[2], -1))  # (batch_size, seq_len, heads_per_shard, dim_per_head)
