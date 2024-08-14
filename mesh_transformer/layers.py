@@ -241,7 +241,12 @@ class TransformerLayerShard(nn.Module):
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
-        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k, optimize=False)
+        # Reshape q and k to ensure the batch dimension is handled properly
+        q = q.reshape((q.shape[1], q.shape[2], q.shape[0], -1))  # (batch_size, heads_per_shard, seq_len, dim_per_head)
+        k = k.reshape((k.shape[1], k.shape[2], k.shape[0], -1))  # (batch_size, heads_per_shard, seq_len, dim_per_head)
+
+        
+        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
         print(f"attention_logits shape after einsum: {attention_logits.shape}")
 
         # The correct shape for attention_logits should be (batch_size, heads_per_shard, seq_len, seq_len)
