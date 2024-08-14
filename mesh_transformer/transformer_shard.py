@@ -28,6 +28,7 @@ class CausalTransformerShard(nn.Module):
         self.transformer_layers = [TransformerLayerShard(config=self.config, mesh_manager=self.mesh_manager) for _ in range(self.layers)]
         self.embed = nn.Embed(self.config["n_vocab"], self.d_model)
         self.proj = ProjectionShard(config=self.config)
+        self.rpe = None  # Ensure this is defined if used
 
     def __call__(self, x):
         x = self.embed(x)
@@ -47,7 +48,7 @@ class CausalTransformerShard(nn.Module):
         if self.rpe is not None:
             attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
         else:
-            attn_bias = 0
+            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))
 
         attn_bias += mask
 
@@ -78,7 +79,7 @@ class CausalTransformerShard(nn.Module):
         if self.rpe is not None:
             attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
         else:
-            attn_bias = 0
+            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))
 
         x = self.embed(context)
 
@@ -97,7 +98,7 @@ class CausalTransformerShard(nn.Module):
             attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
             attn_bias = attn_bias[:, -1:, :]
         else:
-            attn_bias = 0
+            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))[:, -1:, :]
 
         x = self.embed(new_tok)
 
@@ -109,6 +110,7 @@ class CausalTransformerShard(nn.Module):
             new_states.append(layer_state)
 
         return self.proj(x), new_states
+
 
 
 class CausalTransformer:
