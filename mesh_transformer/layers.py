@@ -123,18 +123,17 @@ def fixed_pos_embedding(seq_len, dim):
 
 
 def rotate_every_two(x):
-    x1 = x[:, :, :, ::2]
-    x2 = x[:, :, :, 1::2]
+    x1 = x[:, :, ::2]  # Remove the unnecessary dimension
+    x2 = x[:, :, 1::2]  # Remove the unnecessary dimension
+
     x = jnp.stack((-x2, x1), axis=-1)
+
     return rearrange(x, '... d j -> ... (d j)')
 
-
 def apply_rotary_pos_emb(x, sincos):
-    sin, cos = sincos
-    seq_len, batch_size, num_heads, head_dim = x.shape
-    sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)[:, :, :, :head_dim]
-    cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)[:, :, :, :head_dim]
+    sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :], sincos)
     return (x * cos) + (rotate_every_two(x) * sin)
+
 
 
 class EmbeddingShard(nn.Module):
