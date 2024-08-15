@@ -39,10 +39,8 @@ class CausalTransformerShard(nn.Module):
         
         # Calculate attn_bias
         input_len = x.shape[0]
-        if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
-        else:
-            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # As fallback, though rpe should be set
+        # Simplified handling of attn_bias
+        attn_bias = mask  # If rpe is not used, simply set attn_bias to the mask or 0
 
         for layer in self.transformer_layers:
             x = layer(x, attn_bias)
@@ -51,11 +49,6 @@ class CausalTransformerShard(nn.Module):
 
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
-
-        if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
-        else:
-            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # As fallback
 
         attn_bias += mask
 
@@ -83,10 +76,7 @@ class CausalTransformerShard(nn.Module):
 
         input_len = context.shape[0]
 
-        if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
-        else:
-            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # As fallback
+        attn_bias = mask  # If rpe is not used, simply set attn_bias to the mask or 0
 
         x = self.embed(context)
 
@@ -101,11 +91,7 @@ class CausalTransformerShard(nn.Module):
     def generate_once(self, new_tok, state):
         input_len = state[0]["v"].shape[0]
 
-        if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
-            attn_bias = attn_bias[:, -1:, :]
-        else:
-            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # As fallback
+        attn_bias = mask  # If rpe is not used, simply set attn_bias to the mask or 0
 
         x = self.embed(new_tok)
 
