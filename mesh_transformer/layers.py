@@ -220,7 +220,6 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
-        
         # Verify the shapes of q, v, and k
         print(f"q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
 
@@ -232,43 +231,24 @@ class TransformerLayerShard(nn.Module):
             q_rot = q[:, :, :, :self.pe_rotary_dims]
             q_pass = q[:, :, :, self.pe_rotary_dims:]
 
-            seq_len, batch_size, num_heads, _ = k_rot.shape
-
-            sincos = fixed_pos_embedding(seq_len, self.pe_rotary_dims)
+            sincos = fixed_pos_embedding(k_rot.shape[0], self.pe_rotary_dims)
             q_rot = apply_rotary_pos_emb(q_rot, sincos)
             k_rot = apply_rotary_pos_emb(k_rot, sincos)
 
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
-        print(f"after concatenate q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
-        # Reshape q and k to ensure the batch dimension is handled properly
-        q = q.reshape((q.shape[1], q.shape[0], q.shape[2], -1))  # (batch_size, seq_len, heads_per_shard, dim_per_head)
-        k = k.reshape((k.shape[1], k.shape[0], k.shape[2], -1))  # (batch_size, seq_len, heads_per_shard, dim_per_head)
-
+        # Adjusted einsum to handle batch dimensions
         attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
         print(f"attention_logits shape after einsum: {attention_logits.shape}")
-
-        # The correct shape for attention_logits should be (batch_size, heads_per_shard, seq_len, seq_len)
-        if attention_logits.shape[0] != q.shape[0]:  # Check batch size
-            
-            print("Mismatch in batch size, attempting to reshape...")
-            attention_logits = attention_logits.reshape((q.shape[0], q.shape[2], q.shape[1], k.shape[1]))
 
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
 
-        print(f"attn_bias shape: {attn_bias.shape}")  # Debugging print
-        # Check the batch size dimension and broadcast if necessary
+        # Ensure attn_bias is broadcastable to attention_logits
         if attn_bias.shape[0] != attention_logits.shape[0]:
-            
             attn_bias = jnp.broadcast_to(attn_bias, attention_logits.shape)
         print(f"Rechecked attn_bias shape: {attn_bias.shape}")
-
-        # Ensure the shapes are still compatible
-        if attention_logits.shape != attn_bias.shape:
-            
-            raise ValueError(f"Shapes are incompatible: attention_logits {attention_logits.shape}, attn_bias {attn_bias.shape}")
 
         attention_logits += attn_bias
 
@@ -276,6 +256,7 @@ class TransformerLayerShard(nn.Module):
         attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
 
         return self.o(attention_vec)
+
 
     def ff(self, x):
         dense_proj = self.dense_proj(x)
