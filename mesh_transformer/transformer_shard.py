@@ -24,19 +24,26 @@ class CausalTransformerShard(nn.Module):
         self.layers = self.config["layers"]
         self.d_model = self.config["d_model"]
         self.n_heads = self.config["n_heads"]
-        self.heads_per_shard = self.config["n_heads"] // self.config["cores_per_replica"]
+        self.heads_per_shard = self.n_heads // self.config["cores_per_replica"]
         self.transformer_layers = [TransformerLayerShard(config=self.config, mesh_manager=self.mesh_manager) for _ in range(self.layers)]
         self.embed = nn.Embed(self.config["n_vocab"], self.d_model)
         self.proj = ProjectionShard(config=self.config)
-        self.rpe = None  # Ensure this is defined if used
+
+        if self.config["pe"] == "t5":
+            self.rpe = RelativePositionEmbs()
+        else:
+            self.rpe = None
 
     def __call__(self, x):
         x = self.embed(x)
         
         # Calculate attn_bias
         input_len = x.shape[0]
-        attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # Assuming a simple zero bias
-        
+        if self.rpe is not None:
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
+        else:
+            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # As fallback, though rpe should be set
+
         for layer in self.transformer_layers:
             x = layer(x, attn_bias)
         
@@ -46,9 +53,9 @@ class CausalTransformerShard(nn.Module):
         input_len = context.shape[0]
 
         if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
         else:
-            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))
+            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # As fallback
 
         attn_bias += mask
 
@@ -77,9 +84,9 @@ class CausalTransformerShard(nn.Module):
         input_len = context.shape[0]
 
         if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
         else:
-            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))
+            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # As fallback
 
         x = self.embed(context)
 
@@ -95,10 +102,10 @@ class CausalTransformerShard(nn.Module):
         input_len = state[0]["v"].shape[0]
 
         if self.rpe is not None:
-            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard)
+            attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
             attn_bias = attn_bias[:, -1:, :]
         else:
-            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))[:, -1:, :]
+            attn_bias = jnp.zeros((self.n_heads, input_len, input_len))  # As fallback
 
         x = self.embed(new_tok)
 
