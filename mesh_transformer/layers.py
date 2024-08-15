@@ -224,7 +224,6 @@ class TransformerLayerShard(nn.Module):
         print(f"q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
 
         if self.is_rotary:
-            
             k_rot = k[:, :, :, :self.pe_rotary_dims]
             k_pass = k[:, :, :, self.pe_rotary_dims:]
 
@@ -238,24 +237,24 @@ class TransformerLayerShard(nn.Module):
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
-        # Adjusted einsum to handle batch dimensions
         attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
         print(f"attention_logits shape after einsum: {attention_logits.shape}")
 
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
 
-        # Ensure attn_bias is broadcastable to attention_logits
-        if attn_bias.shape[0] != attention_logits.shape[0]:
-            attn_bias = jnp.broadcast_to(attn_bias, attention_logits.shape)
-        print(f"Rechecked attn_bias shape: {attn_bias.shape}")
-
-        attention_logits += attn_bias
+        # If attn_bias is just 0 or a scalar, simplify how it is applied
+        if isinstance(attn_bias, (int, float)):
+            attention_logits += attn_bias
+        else:
+            # Broadcasting should work now since attn_bias should match the logits' shape
+            attention_logits += attn_bias
 
         attention_weights = jax.nn.softmax(attention_logits)
         attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
 
         return self.o(attention_vec)
+
 
 
     def ff(self, x):
