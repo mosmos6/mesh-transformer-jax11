@@ -220,38 +220,33 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
-        # Verify the shapes of q, v, and k
-        print(f"q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
-
+        # Check if rotary embeddings are used
         if self.is_rotary:
-            k_rot = k[:, :, :, :self.pe_rotary_dims]
-            k_pass = k[:, :, :, self.pe_rotary_dims:]
+            k_rot = k[:, :, :self.pe_rotary_dims]
+            k_pass = k[:, :, self.pe_rotary_dims:]
 
-            q_rot = q[:, :, :, :self.pe_rotary_dims]
-            q_pass = q[:, :, :, self.pe_rotary_dims:]
+            q_rot = q[:, :, :self.pe_rotary_dims]
+            q_pass = q[:, :, self.pe_rotary_dims:]
 
             sincos = fixed_pos_embedding(k_rot.shape[0], self.pe_rotary_dims)
             q_rot = apply_rotary_pos_emb(q_rot, sincos)
             k_rot = apply_rotary_pos_emb(k_rot, sincos)
 
+            # Concatenate the rotary and non-rotary parts
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
-        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
-        print(f"attention_logits shape after einsum: {attention_logits.shape}")
-
+        # Compute attention logits using einsum without an explicit batch dimension
+        attention_logits = jnp.einsum("thd,Thd->htT", q, k)
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
 
-        # If attn_bias is just 0 or a scalar, simplify how it is applied
-        if isinstance(attn_bias, (int, float)):
-            attention_logits += attn_bias
-        else:
-            # Broadcasting should work now since attn_bias should match the logits' shape
-            attention_logits += attn_bias
+        # Add attention bias
+        attention_logits += attn_bias
 
+        # Compute attention weights and the output of the attention mechanism
         attention_weights = jax.nn.softmax(attention_logits)
-        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
 
         return self.o(attention_vec)
 
