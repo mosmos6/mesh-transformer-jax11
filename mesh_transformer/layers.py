@@ -119,21 +119,22 @@ def fixed_pos_embedding(seq_len, dim):
     sin = np.sin(sinusoid_inp)
     cos = np.cos(sinusoid_inp)
     
-    # Do not concatenate the sin and cos arrays; keep them as they are
     return sin, cos
 
-
 def rotate_every_two(x):
-    x1 = x[:, :, ::2]  # Remove the unnecessary dimension
-    x2 = x[:, :, 1::2]  # Remove the unnecessary dimension
+    x1 = x[..., ::2]
+    x2 = x[..., 1::2]
 
     x = jnp.stack((-x2, x1), axis=-1)
-
     return rearrange(x, '... d j -> ... (d j)')
 
 def apply_rotary_pos_emb(x, sincos):
-    sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :], sincos)
+    sin, cos = sincos
+    sin = repeat(sin, 'n d -> n 1 d', d=x.shape[-1])
+    cos = repeat(cos, 'n d -> n 1 d', d=x.shape[-1])
+    
     return (x * cos) + (rotate_every_two(x) * sin)
+
 
 
 
