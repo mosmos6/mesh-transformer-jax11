@@ -131,18 +131,14 @@ def rotate_every_two(x):
 
 def apply_rotary_pos_emb(x, sincos, pe_rotary_dims):
     sin, cos = sincos
-    seq_len, batch_size, num_heads, head_dim = x.shape
     
-    # Adjust sin and cos to match the dimensions of x
-    sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)
-    cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)
+    # Ensure sin and cos match the rotary dimensions
+    sin = repeat(sin, 'n d -> n 1 1 d', d=pe_rotary_dims)
+    cos = repeat(cos, 'n d -> n 1 1 d', d=pe_rotary_dims)
     
-    # Slice sin and cos to match pe_rotary_dims
-    sin = sin[..., :pe_rotary_dims]
-    cos = cos[..., :pe_rotary_dims]
+    print(f"sin shape: {sin.shape}, cos shape: {cos.shape}")
     
     return (x * cos) + (rotate_every_two(x) * sin)
-
 
 
 
@@ -231,6 +227,8 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
+        print(f"Initial q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
+        print(f"Expected pe_rotary_dims: {self.pe_rotary_dims}")
         # Check if rotary embeddings are used
         if self.is_rotary:
             k_rot = k[:, :, :self.pe_rotary_dims]
@@ -239,7 +237,10 @@ class TransformerLayerShard(nn.Module):
             q_rot = q[:, :, :self.pe_rotary_dims]
             q_pass = q[:, :, self.pe_rotary_dims:]
 
+            print(f"q_rot shape: {q_rot.shape}, k_rot shape: {k_rot.shape}")
+
             sincos = fixed_pos_embedding(k_rot.shape[0], self.pe_rotary_dims)
+            print(f"sincos shapes: {[arr.shape for arr in sincos]}")
             q_rot = apply_rotary_pos_emb(q_rot, sincos, self.pe_rotary_dims)
             k_rot = apply_rotary_pos_emb(k_rot, sincos, self.pe_rotary_dims)
 
@@ -247,9 +248,11 @@ class TransformerLayerShard(nn.Module):
             # Concatenate the rotary and non-rotary parts
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
+            print(f"Concatenated q shape: {q.shape}, k shape: {k.shape}")
 
         # Compute attention logits using einsum without an explicit batch dimension
         attention_logits = jnp.einsum("thd,Thd->htT", q, k)
+        print(f"attention_logits shape: {attention_logits.shape}")
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
 
@@ -259,7 +262,7 @@ class TransformerLayerShard(nn.Module):
         # Compute attention weights and the output of the attention mechanism
         attention_weights = jax.nn.softmax(attention_logits)
         attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
-
+        print(f"attention_vec shape: {attention_vec.shape}")
         return self.o(attention_vec)
 
 
