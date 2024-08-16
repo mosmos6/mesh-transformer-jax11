@@ -243,13 +243,14 @@ class TransformerLayerShard(nn.Module):
         print(f"Expected pe_rotary_dims: {self.pe_rotary_dims}")
         # Check if rotary embeddings are used
         if self.is_rotary:
-            k_rot = k[:, :, :self.pe_rotary_dims]
-            k_pass = k[:, :, self.pe_rotary_dims:]
+            k_rot = k[..., :self.pe_rotary_dims]
+            k_pass = k[..., self.pe_rotary_dims:]
 
-            q_rot = q[:, :, :self.pe_rotary_dims]
-            q_pass = q[:, :, self.pe_rotary_dims:]
+            q_rot = q[..., :self.pe_rotary_dims]
+            q_pass = q[..., self.pe_rotary_dims:]
 
             print(f"q_rot shape: {q_rot.shape}, k_rot shape: {k_rot.shape}")
+            print(f"q_pass shape: {q_pass.shape}, k_pass shape: {k_pass.shape}")
 
             sincos = fixed_pos_embedding(k_rot.shape[0], self.pe_rotary_dims)
             print(f"sincos shapes: {[arr.shape for arr in sincos]}")
