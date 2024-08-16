@@ -119,7 +119,12 @@ def fixed_pos_embedding(seq_len, dim):
     sin = np.sin(sinusoid_inp)
     cos = np.cos(sinusoid_inp)
     
-    return sin, cos
+    # Ensure sin and cos match the pe_rotary_dims (dim) exactly
+    sin = np.concatenate([sin, sin], axis=-1)[:, :dim]
+    cos = np.concatenate([cos, cos], axis=-1)[:, :dim]
+    
+    return jnp.array(sin, dtype=jnp.float32), jnp.array(cos, dtype=jnp.float32)
+
 
 
 def rotate_every_two(x):
