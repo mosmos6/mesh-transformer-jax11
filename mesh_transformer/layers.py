@@ -264,7 +264,7 @@ class TransformerLayerShard(nn.Module):
             print(f"Concatenated q shape: {q.shape}, k shape: {k.shape}")
 
         # Compute attention logits using einsum without an explicit batch dimension
-        attention_logits = jnp.einsum("thd,Thd->htT", q, k)
+        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
         print(f"attention_logits shape: {attention_logits.shape}")
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
         attention_logits = attention_logits / sqrt_key_size
@@ -274,7 +274,7 @@ class TransformerLayerShard(nn.Module):
 
         # Compute attention weights and the output of the attention mechanism
         attention_weights = jax.nn.softmax(attention_logits)
-        attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
         print(f"attention_vec shape: {attention_vec.shape}")
         return self.o(attention_vec)
 
