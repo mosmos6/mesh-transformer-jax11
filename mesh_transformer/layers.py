@@ -115,11 +115,12 @@ def fixed_pos_embedding(seq_len, dim):
     inv_freq = 1. / (10000 ** (np.arange(0, dim, 2) / dim))
     position = np.arange(0, seq_len, dtype=np.float32)
     sinusoid_inp = np.einsum('i,j->ij', position, inv_freq)
+    
     sin = np.sin(sinusoid_inp)
     cos = np.cos(sinusoid_inp)
-    sin = np.concatenate([sin, sin], axis=-1)
-    cos = np.concatenate([cos, cos], axis=-1)
-    return jnp.array(sin, dtype=jnp.float32), jnp.array(cos, dtype=jnp.float32)
+    
+    # Do not concatenate the sin and cos arrays; keep them as they are
+    return sin, cos
 
 
 def rotate_every_two(x):
