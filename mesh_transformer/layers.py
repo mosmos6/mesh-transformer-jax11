@@ -137,13 +137,20 @@ def rotate_every_two(x):
 def apply_rotary_pos_emb(x, sincos, pe_rotary_dims):
     sin, cos = sincos
     
-    # Ensure sin and cos match the rotary dimensions
+    # Ensure sin and cos match the dimensions of x for broadcasting
     sin = repeat(sin, 'n d -> n 1 1 d', d=pe_rotary_dims)
     cos = repeat(cos, 'n d -> n 1 1 d', d=pe_rotary_dims)
     
-    print(f"sin shape: {sin.shape}, cos shape: {cos.shape}")
+    # Apply rotary position embedding to the first `pe_rotary_dims` dimensions
+    x_rot = x[..., :pe_rotary_dims]
+    x_pass = x[..., pe_rotary_dims:]
     
-    return (x * cos) + (rotate_every_two(x) * sin)
+    # Perform the element-wise operations
+    x_rot = (x_rot * cos) + (rotate_every_two(x_rot) * sin)
+    
+    # Concatenate back the processed and unprocessed dimensions
+    return jnp.concatenate([x_rot, x_pass], axis=-1)
+
 
 
 
