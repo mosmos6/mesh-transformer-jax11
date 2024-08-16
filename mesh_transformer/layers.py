@@ -137,8 +137,9 @@ def apply_rotary_pos_emb(x, sincos):
     sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)
     cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)
     
-    sin = sin[..., :head_dim]
-    cos = cos[..., :head_dim]
+    # Slice sin and cos to match pe_rotary_dims
+    sin = sin[..., :self.pe_rotary_dims]
+    cos = cos[..., :self.pe_rotary_dims]
     
     return (x * cos) + (rotate_every_two(x) * sin)
 
