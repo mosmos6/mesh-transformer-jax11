@@ -129,19 +129,17 @@ def rotate_every_two(x):
     x = jnp.stack((-x2, x1), axis=-1)
     return rearrange(x, '... d j -> ... (d j)')
 
-def apply_rotary_pos_emb(x, sincos):
+def apply_rotary_pos_emb(x, sincos, pe_rotary_dims):
     sin, cos = sincos
     seq_len, batch_size, num_heads, head_dim = x.shape
-    self.pe_rotary_dims = self.config.get("pe_rotary_dims", self.dim_per_head)
-
     
     # Adjust sin and cos to match the dimensions of x
     sin = repeat(sin, 'n d -> n b h d', b=batch_size, h=num_heads)
     cos = repeat(cos, 'n d -> n b h d', b=batch_size, h=num_heads)
     
     # Slice sin and cos to match pe_rotary_dims
-    sin = sin[..., :self.pe_rotary_dims]
-    cos = cos[..., :self.pe_rotary_dims]
+    sin = sin[..., :pe_rotary_dims]
+    cos = cos[..., :pe_rotary_dims]
     
     return (x * cos) + (rotate_every_two(x) * sin)
 
@@ -242,8 +240,9 @@ class TransformerLayerShard(nn.Module):
             q_pass = q[:, :, self.pe_rotary_dims:]
 
             sincos = fixed_pos_embedding(k_rot.shape[0], self.pe_rotary_dims)
-            q_rot = apply_rotary_pos_emb(q_rot, sincos)
-            k_rot = apply_rotary_pos_emb(k_rot, sincos)
+            q_rot = apply_rotary_pos_emb(q_rot, sincos, self.pe_rotary_dims)
+            k_rot = apply_rotary_pos_emb(k_rot, sincos, self.pe_rotary_dims)
+
 
             # Concatenate the rotary and non-rotary parts
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
