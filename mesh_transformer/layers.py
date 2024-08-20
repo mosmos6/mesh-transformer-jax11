@@ -137,13 +137,16 @@ def rotate_every_two(x):
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
 
-    # Ensure that sin and cos have the same number of dimensions as x
-    # Here, we repeat along the necessary dimensions only
+    # sin and cos should be broadcastable to x's shape
     sin = repeat(sin, 'n d -> n 1 d')[:, :, :x.shape[-1]]
     cos = repeat(cos, 'n d -> n 1 d')[:, :, :x.shape[-1]]
 
-    # Apply the rotary embedding
-    return (x * cos) + (rotate_every_two(x) * sin)
+    # Apply rotary embedding
+    rotated_x = rotate_every_two(x)
+    
+    print(f"x shape after rearrange: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
+    
+    return (x * cos) + (rotated_x * sin)
 
 
 class EmbeddingShard(nn.Module):
