@@ -135,7 +135,14 @@ def rotate_every_two(x):
     return rearrange(x, '... d j -> ... (d j)')
 
 def apply_rotary_pos_emb(x, sincos):
-    sin, cos = map(lambda t: repeat(t, 'n d -> n 1 d', d=2 * (x.shape[-1] // 2)), sincos)
+    sin, cos = sincos
+
+    # Ensure that sin and cos have the same number of dimensions as x
+    # Here, we repeat along the necessary dimensions only
+    sin = repeat(sin, 'n d -> n 1 d')[:, :, :x.shape[-1]]
+    cos = repeat(cos, 'n d -> n 1 d')[:, :, :x.shape[-1]]
+
+    # Apply the rotary embedding
     return (x * cos) + (rotate_every_two(x) * sin)
 
 
