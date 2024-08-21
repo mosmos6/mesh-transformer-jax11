@@ -238,18 +238,34 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
-        
         if self.is_rotary:
             sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims)
-            q = apply_rotary_pos_emb(q, sincos, self.pe_rotary_dims)
-            k = apply_rotary_pos_emb(k, sincos, self.pe_rotary_dims)
-
-        # Perform attention calculations without explicitly handling batch dimensions
-        attention_logits = jnp.einsum("thd,Thd->htT", q, k)
-        attention_weights = jax.nn.softmax(attention_logits)
+            q_rot = apply_rotary_pos_emb(q, sincos, self.pe_rotary_dims)
+            k_rot = apply_rotary_pos_emb(k, sincos, self.pe_rotary_dims)
+        
+            # Handle the non-rotary part
+            q_pass = q[..., self.pe_rotary_dims:]
+            k_pass = k[..., self.pe_rotary_dims:]
+        
+            # Concatenate rotary and non-rotary parts
+            q = jnp.concatenate([q_rot, q_pass], axis=-1)
+            k = jnp.concatenate([k_rot, k_pass], axis=-1)
     
-        attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        # Debugging: Print shapes before einsum
+        print(f"q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
+    
+        try:
+            
+            # Perform attention calculations with the simplified einsum string
+            attention_logits = jnp.einsum("thd,Thd->htT", q, k)
+            print(f"attention_logits shape: {attention_logits.shape}")
+        except ValueError as e:
+            print(f"Error in einsum: {e}")
+            raise
 
+        attention_weights = jax.nn.softmax(attention_logits)
+        attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
+    
         return self.o(attention_vec)
 
 
