@@ -240,8 +240,8 @@ class TransformerLayerShard(nn.Module):
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
             sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims)
-            q_rot = apply_rotary_pos_emb(q, sincos, self.pe_rotary_dims)
-            k_rot = apply_rotary_pos_emb(k, sincos, self.pe_rotary_dims)
+            q_rot = apply_rotary_pos_emb(q[..., :self.pe_rotary_dims], sincos)
+            k_rot = apply_rotary_pos_emb(k[..., :self.pe_rotary_dims], sincos)
         
             # Handle the non-rotary part
             q_pass = q[..., self.pe_rotary_dims:]
@@ -250,12 +250,11 @@ class TransformerLayerShard(nn.Module):
             # Concatenate rotary and non-rotary parts
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
-    
+
         # Debugging: Print shapes before einsum
         print(f"q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
-    
+
         try:
-            
             # Perform attention calculations with the simplified einsum string
             attention_logits = jnp.einsum("thd,Thd->htT", q, k)
             print(f"attention_logits shape: {attention_logits.shape}")
@@ -269,17 +268,33 @@ class TransformerLayerShard(nn.Module):
         return self.o(attention_vec)
 
 
+
     def ff(self, x):
         dense_proj = self.dense_proj(x)
         dense_proj = jax.nn.gelu(dense_proj)
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
-        v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
-        k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+        # Assuming x.shape is [batch_size, seq_len, d_model]
+        batch_size, seq_len, _ = x.shape
+
+        # Reshape q, v, k appropriately considering the heads and head dimension
+        q = self.q(x).reshape(batch_size, seq_len, self.heads_per_shard, self.dim_per_head)
+        v = self.v(x).reshape(batch_size, seq_len, self.heads_per_shard, self.dim_per_head)
+        k = self.k(x).reshape(batch_size, seq_len, self.heads_per_shard, self.dim_per_head)
+    
+        # Rearrange the dimensions to match the einsum expectation
+        q = jnp.transpose(q, (1, 0, 2, 3))  # [seq_len, batch_size, heads_per_shard, dim_per_head]
+        v = jnp.transpose(v, (1, 0, 2, 3))  # [seq_len, batch_size, heads_per_shard, dim_per_head]
+        k = jnp.transpose(k, (1, 0, 2, 3))  # [seq_len, batch_size, heads_per_shard, dim_per_head]
+
+        # Reshape to merge batch and head dimensions if necessary
+        q = q.reshape(seq_len, -1, self.dim_per_head)  # [seq_len, batch_size * heads_per_shard, dim_per_head]
+        v = v.reshape(seq_len, -1, self.dim_per_head)  # [seq_len, batch_size * heads_per_shard, dim_per_head]
+        k = k.reshape(seq_len, -1, self.dim_per_head)  # [seq_len, batch_size * heads_per_shard, dim_per_head]
 
         return q, v, k
+
 
     def __call__(self, x, attn_bias):
         x = jax.lax.psum(x, axis_name='mp')
