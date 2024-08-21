@@ -134,7 +134,7 @@ def rotate_every_two(x):
     x = jnp.stack((-x2, x1), axis=-1)
     return rearrange(x, '... d j -> ... (d j)')
 
-def apply_rotary_pos_emb(x, sincos):
+def apply_rotary_pos_emb(x, sincos, pe_rotary_dims):
     sin, cos = sincos
 
     # Split the input into the part that receives rotary embeddings and the part that doesn't
@@ -145,14 +145,12 @@ def apply_rotary_pos_emb(x, sincos):
     sin = repeat(sin, 'n d -> n 1 1 d', d=pe_rotary_dims)
     cos = repeat(cos, 'n d -> n 1 1 d', d=pe_rotary_dims)
 
-    # Apply the rotary embedding
+    # Apply the rotary embedding to the first pe_rotary_dims dimensions
     rotated_x = rotate_every_two(x_rotary)
-    
-    # Combine the rotary-embedded part with the non-rotary part
-    x = (rotated_x * sin) + (x_rotary * cos)
-    
+    x_rotary = (rotated_x * sin) + (x_rotary * cos)
+
     # Concatenate the rotary-embedded part back with the non-rotary part
-    x = jnp.concatenate([x, x_pass], axis=-1)
+    x = jnp.concatenate([x_rotary, x_pass], axis=-1)
 
     return x
 
@@ -243,8 +241,8 @@ class TransformerLayerShard(nn.Module):
         
         if self.is_rotary:
             sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims)
-            q = apply_rotary_pos_emb(q, sincos)
-            k = apply_rotary_pos_emb(k, sincos)
+            q = apply_rotary_pos_emb(q, sincos, self.pe_rotary_dims)
+            k = apply_rotary_pos_emb(k, sincos, self.pe_rotary_dims)
 
         # Perform attention calculations without explicitly handling batch dimensions
         attention_logits = jnp.einsum("thd,Thd->htT", q, k)
