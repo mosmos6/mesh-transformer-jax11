@@ -137,16 +137,24 @@ def rotate_every_two(x):
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
 
-    # sin and cos should be broadcastable to x's shape
-    sin = repeat(sin, 'n d -> n 1 d')[:, :, :x.shape[-1]]
-    cos = repeat(cos, 'n d -> n 1 d')[:, :, :x.shape[-1]]
+    # Split the input into the part that receives rotary embeddings and the part that doesn't
+    x_rotary = x[..., :pe_rotary_dims]
+    x_pass = x[..., pe_rotary_dims:]
 
-    # Apply rotary embedding
-    rotated_x = rotate_every_two(x)
+    # Adjust sin and cos to match the dimensions of x_rotary
+    sin = repeat(sin, 'n d -> n 1 1 d', d=pe_rotary_dims)
+    cos = repeat(cos, 'n d -> n 1 1 d', d=pe_rotary_dims)
+
+    # Apply the rotary embedding
+    rotated_x = rotate_every_two(x_rotary)
     
-    print(f"x shape after rearrange: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
+    # Combine the rotary-embedded part with the non-rotary part
+    x = (rotated_x * sin) + (x_rotary * cos)
     
-    return (x * cos) + (rotated_x * sin)
+    # Concatenate the rotary-embedded part back with the non-rotary part
+    x = jnp.concatenate([x, x_pass], axis=-1)
+
+    return x
 
 
 class EmbeddingShard(nn.Module):
