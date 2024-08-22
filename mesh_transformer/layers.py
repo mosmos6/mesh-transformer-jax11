@@ -135,8 +135,17 @@ def rotate_every_two(x):
     return rearrange(x, '... d j -> ... (d j)')
 
 def apply_rotary_pos_emb(x, sincos):
-    sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :], sincos)
-    return (x * cos) + (rotate_every_two(x) * sin)
+    sin, cos = sincos
+    
+    # Ensure sin and cos are broadcastable to the shape of x
+    sin = repeat(sin, 'b n -> b 1 n j', j=2)[-x.shape[0]:, None, :, :x.shape[-1]//2]
+    cos = repeat(cos, 'b n -> b 1 n j', j=2)[-x.shape[0]:, None, :, :x.shape[-1]//2]
+
+    # Apply rotary embedding
+    x_rotary = (rotate_every_two(x) * sin) + (x * cos)
+    
+    return x_rotary
+
 
 
 class EmbeddingShard(nn.Module):
