@@ -134,26 +134,9 @@ def rotate_every_two(x):
     x = jnp.stack((-x2, x1), axis=-1)
     return rearrange(x, '... d j -> ... (d j)')
 
-def apply_rotary_pos_emb(x, sincos, pe_rotary_dims):
-    sin, cos = sincos
-
-    # Split the input into the part that receives rotary embeddings and the part that doesn't
-    x_rotary = x[..., :pe_rotary_dims]
-    x_pass = x[..., pe_rotary_dims:]
-
-    # Adjust sin and cos to match the dimensions of x_rotary
-    sin = repeat(sin, 'n d -> n 1 1 d', d=pe_rotary_dims)
-    cos = repeat(cos, 'n d -> n 1 1 d', d=pe_rotary_dims)
-
-    # Apply the rotary embedding to the first pe_rotary_dims dimensions
-    rotated_x = rotate_every_two(x_rotary)
-    x_rotary = (rotated_x * sin) + (x_rotary * cos)
-
-    # Concatenate the rotary-embedded part back with the non-rotary part
-    x = jnp.concatenate([x_rotary, x_pass], axis=-1)
-
-    return x
-
+def apply_rotary_pos_emb(x, sincos):
+    sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :], sincos)
+    return (x * cos) + (rotate_every_two(x) * sin)
 
 class EmbeddingShard(nn.Module):
     config: dict
@@ -240,32 +223,22 @@ class TransformerLayerShard(nn.Module):
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
             sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims)
-            q_rot = apply_rotary_pos_emb(q[..., :self.pe_rotary_dims], sincos, self.pe_rotary_dims)
-            k_rot = apply_rotary_pos_emb(k[..., :self.pe_rotary_dims], sincos, self.pe_rotary_dims)
-        
-            # Handle the non-rotary part
-            q_pass = q[..., self.pe_rotary_dims:]
-            k_pass = k[..., self.pe_rotary_dims:]
-        
-            # Concatenate rotary and non-rotary parts
-            q = jnp.concatenate([q_rot, q_pass], axis=-1)
-            k = jnp.concatenate([k_rot, k_pass], axis=-1)
+            q = apply_rotary_pos_emb(q, sincos)
+            k = apply_rotary_pos_emb(k, sincos)
 
-        # Debugging: Print shapes before einsum
-        print(f"q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
-
-        try:
-            # Perform attention calculations with the simplified einsum string
-            attention_logits = jnp.einsum("thd,Thd->htT", q, k)
-            print(f"attention_logits shape: {attention_logits.shape}")
-        except ValueError as e:
-            print(f"Error in einsum: {e}")
-            raise
-
+        # Perform attention calculations with the simplified einsum string
+        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
         attention_weights = jax.nn.softmax(attention_logits)
-        attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
     
         return self.o(attention_vec)
+
+def qvk_proj(self, x):
+    q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+    v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+    k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+
+    return q, v, k
 
 
 
