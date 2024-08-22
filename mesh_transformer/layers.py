@@ -138,8 +138,8 @@ def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
     
     # Reshape sin and cos to match x after applying rotary
-    sin = repeat(sin, 'b n -> b 1 n j', j=2)[-x.shape[0]:, -x.shape[1]:, -x.shape[2]:, :-x.shape[3]]
-    cos = repeat(cos, 'b n -> b 1 n j', j=2)[-x.shape[0]:, -x.shape[1]:, -x.shape[2]:, :-x.shape[3]]
+    sin = repeat(sin, 'b n -> b 1 n j', j=2)[-x.shape[0]:, -x.shape[1]:, -x.shape[2]:, -x.shape[3]]
+    cos = repeat(cos, 'b n -> b 1 n j', j=2)[-x.shape[0]:, -x.shape[1]:, -x.shape[2]:, -x.shape[3]]
 
     # Debug message to print shapes
     print(f"sin shape: {sin.shape}, cos shape: {cos.shape}, x shape: {x.shape}")
