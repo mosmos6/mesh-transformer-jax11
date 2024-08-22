@@ -138,6 +138,7 @@ def apply_rotary_pos_emb(x, sincos):
     sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :], sincos)
     return (x * cos) + (rotate_every_two(x) * sin)
 
+
 class EmbeddingShard(nn.Module):
     config: dict
 
@@ -221,6 +222,7 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
+        
         if self.is_rotary:
             sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims)
             q = apply_rotary_pos_emb(q, sincos)
@@ -233,13 +235,6 @@ class TransformerLayerShard(nn.Module):
     
         return self.o(attention_vec)
 
-def qvk_proj(self, x):
-    q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
-    v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
-    k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
-
-    return q, v, k
-
 
 
     def ff(self, x):
@@ -248,23 +243,10 @@ def qvk_proj(self, x):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        # Assuming x.shape is [batch_size, seq_len, d_model]
-        batch_size, seq_len, _ = x.shape
-
-        # Reshape q, v, k appropriately considering the heads and head dimension
-        q = self.q(x).reshape(batch_size, seq_len, self.heads_per_shard, self.dim_per_head)
-        v = self.v(x).reshape(batch_size, seq_len, self.heads_per_shard, self.dim_per_head)
-        k = self.k(x).reshape(batch_size, seq_len, self.heads_per_shard, self.dim_per_head)
-    
-        # Rearrange the dimensions to match the einsum expectation
-        q = jnp.transpose(q, (1, 0, 2, 3))  # [seq_len, batch_size, heads_per_shard, dim_per_head]
-        v = jnp.transpose(v, (1, 0, 2, 3))  # [seq_len, batch_size, heads_per_shard, dim_per_head]
-        k = jnp.transpose(k, (1, 0, 2, 3))  # [seq_len, batch_size, heads_per_shard, dim_per_head]
-
-        # Reshape to merge batch and head dimensions if necessary
-        q = q.reshape(seq_len, -1, self.dim_per_head)  # [seq_len, batch_size * heads_per_shard, dim_per_head]
-        v = v.reshape(seq_len, -1, self.dim_per_head)  # [seq_len, batch_size * heads_per_shard, dim_per_head]
-        k = k.reshape(seq_len, -1, self.dim_per_head)  # [seq_len, batch_size * heads_per_shard, dim_per_head]
+        
+        q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+        v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+        k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
 
         return q, v, k
 
