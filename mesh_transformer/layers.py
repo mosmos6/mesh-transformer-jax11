@@ -140,6 +140,9 @@ def apply_rotary_pos_emb(x, sincos):
     # Reshape sin and cos to match x after applying rotary
     sin = repeat(sin, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :x.shape[-1]]
     cos = repeat(cos, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :x.shape[-1]]
+
+    print("sin shape" sin.shape)
+    print("cos shape" cos.shape)
     
     # Apply rotary embedding
     x_rotary = (rotate_every_two(x) * sin) + (x * cos)
