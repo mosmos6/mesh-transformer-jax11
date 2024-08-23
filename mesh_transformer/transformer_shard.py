@@ -35,8 +35,11 @@ class CausalTransformerShard(nn.Module):
             self.rpe = None
 
     def __call__(self, x, mask=0.0):
-        x = self.embed(x)
         
+        print(f"Shape of x before embedding: {x.shape}")  # Debug: Check x shape before embedding
+        x = self.embed(x)
+        print(f"Shape of x after embedding: {x.shape}")  # Debug: Check x shape after embedding
+
         # Calculate attn_bias
         input_len = x.shape[0]
 
@@ -45,9 +48,11 @@ class CausalTransformerShard(nn.Module):
         else:
             attn_bias = mask  # If rpe is not used, simply set attn_bias to the mask or 0
 
-        for layer in self.transformer_layers:
+        for i, layer in enumerate(self.transformer_layers):
+            print(f"Shape of x before layer {i}: {x.shape}")  # Debug: Check x shape before each layer
             x = layer(x, attn_bias)
-        
+            print(f"Shape of x after layer {i}: {x.shape}")  # Debug: Check x shape after each layer
+
         return self.proj(x)
 
     def eval(self, context, target, z_loss=0., mask=0.0):
@@ -144,7 +149,10 @@ class CausalTransformer:
 
         rng = jax.random.PRNGKey(0)
         sample_input = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
+
+        print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug: Before shmap
         self.state, _ = self.init_shmap(rng, sample_input)
+        print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
         
         def train_fn(state, ctx, tgt):
             def train_loss(x, y):
@@ -193,7 +201,9 @@ class CausalTransformer:
         obs = jnp.transpose(sample["obs"], (1, 0))
         tgt = jnp.transpose(sample["target"], (1, 0))
 
+        print(f"Shape of obs before train_shmap: {obs.shape}")  # Debug: Before train_shmap
         loss, last_loss, grad_norm, grad_norm_micro, self.state = self.train_shmap(self.state, obs, tgt)
+        print(f"Shape of x after train_shmap: {self.state['params'].shape}")  # Debug: After train_shmap
         return loss.mean(), last_loss.mean(), grad_norm.mean(), grad_norm_micro.mean()
 
     def eval(self, sample):
