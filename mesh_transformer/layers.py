@@ -128,10 +128,20 @@ def fixed_pos_embedding(seq_len, dim):
 
 
 def rotate_every_two(x):
-    x1 = x[:, :, ::2]
-    x2 = x[:, :, 1::2]
+    
+    # Debug: Print the initial shape of x
+    print(f"rotate_every_two: Input x shape: {x.shape}")
 
+    x1 = x[..., ::2]
+    x2 = x[..., 1::2]
+
+    # Debug: Print the shapes after selecting even and odd elements
+    print(f"rotate_every_two: x1 shape: {x1.shape}, x2 shape: {x2.shape}")
+    
     x = jnp.stack((-x2, x1), axis=-1)
+
+    # Debug: Print the shape after stacking
+    print(f"rotate_every_two: shape after stacking: {x.shape}")
 
     return rearrange(x, '... d j -> ... (d j)')
 
