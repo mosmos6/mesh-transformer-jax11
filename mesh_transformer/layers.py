@@ -225,7 +225,7 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
-        
+        print(f"self_attn: Initial q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")  # Debug: Before rotary embeddings
         if self.is_rotary:
             sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims)
             q = apply_rotary_pos_emb(q, sincos)
@@ -233,28 +233,37 @@ class TransformerLayerShard(nn.Module):
 
         # Perform attention calculations with the simplified einsum string
         attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
+        print(f"self_attn: Attention logits shape: {attention_logits.shape}")  # Debug: Attention logits shape
+
         attention_weights = jax.nn.softmax(attention_logits)
         attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        print(f"self_attn: Attention vec shape: {attention_vec.shape}")  # Debug: Attention vector shape
+
     
         return self.o(attention_vec)
 
 
 
     def ff(self, x):
+        print(f"ff: Input shape: {x.shape}")  # Debug: Input to feedforward
         dense_proj = self.dense_proj(x)
         dense_proj = jax.nn.gelu(dense_proj)
+        print(f"ff: Output shape: {output.shape}")  # Debug: Output from feedforward
+
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        
+        print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
         q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
         v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
         k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+        print(f"qvk_proj: Output q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")  # Debug: After qvk_proj
 
         return q, v, k
 
 
     def __call__(self, x, attn_bias):
+        print(f"TransformerLayerShard: Input x shape: {x.shape}")  # Debug: Input to layer
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
         q, v, k = self.qvk_proj(x)
