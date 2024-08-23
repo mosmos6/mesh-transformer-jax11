@@ -137,7 +137,10 @@ def rotate_every_two(x):
 
 
 def apply_rotary_pos_emb(x, sincos):
-    sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :], sincos)
+    
+    sin = repeat(sin, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]
+    cos = repeat(cos, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]
+
     return (x * cos) + (rotate_every_two(x) * sin)
 
 
