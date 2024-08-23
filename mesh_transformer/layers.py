@@ -136,19 +136,18 @@ def rotate_every_two(x):
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
-    
-    # Reshape sin and cos to match x after applying rotary
-    sin = repeat(sin, 'b n -> b 1 n j', j=2)[-x.shape[0]:, -x.shape[1]:, -x.shape[2]:, -x.shape[-1]]
-    cos = repeat(cos, 'b n -> b 1 n j', j=2)[-x.shape[0]:, -x.shape[1]:, -x.shape[2]:, -x.shape[-1]]
 
-    # Debug message to print shapes
+    # Expand sin and cos to match the shape of x
+    sin = repeat(sin, 'b n -> b 1 2 (n j)', j=2).reshape(x.shape)
+    cos = repeat(cos, 'b n -> b 1 2 (n j)', j=2).reshape(x.shape)
+
+    # Debug: Print shapes to ensure they match
     print(f"sin shape: {sin.shape}, cos shape: {cos.shape}, x shape: {x.shape}")
-    
+
     # Apply rotary embedding
     x_rotary = (rotate_every_two(x) * sin) + (x * cos)
-    
-    return x_rotary
 
+    return x_rotary
 
 
 
