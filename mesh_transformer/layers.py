@@ -128,26 +128,17 @@ def fixed_pos_embedding(seq_len, dim):
 
 
 def rotate_every_two(x):
-    x1 = x[..., ::2]
-    x2 = x[..., 1::2]
+    x1 = x[:, :, ::2]
+    x2 = x[:, :, 1::2]
 
     x = jnp.stack((-x2, x1), axis=-1)
+
     return rearrange(x, '... d j -> ... (d j)')
 
+
 def apply_rotary_pos_emb(x, sincos):
-    sin, cos = sincos
-
-    # Expand sin and cos to match the shape of x
-    sin = repeat(sin, 'b n -> b 1 2 (n j)', j=2).reshape(x.shape)
-    cos = repeat(cos, 'b n -> b 1 2 (n j)', j=2).reshape(x.shape)
-
-    # Debug: Print shapes to ensure they match
-    print(f"sin shape: {sin.shape}, cos shape: {cos.shape}, x shape: {x.shape}")
-
-    # Apply rotary embedding
-    x_rotary = (rotate_every_two(x) * sin) + (x * cos)
-
-    return x_rotary
+    sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j=2)[-x.shape[0]:, None, :], sincos)
+    return (x * cos) + (rotate_every_two(x) * sin)
 
 
 
