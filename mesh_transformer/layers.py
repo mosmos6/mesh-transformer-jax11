@@ -162,9 +162,12 @@ def apply_rotary_pos_emb(x, sincos):
     print(f"apply_rotary_pos_emb: Initial x shape: {x.shape}")
     print(f"apply_rotary_pos_emb: Initial sin shape: {sin.shape}, cos shape: {cos.shape}")
 
-    # Expand sin and cos to match the dimensions of x
-    sin = repeat(sin, 'b n -> b 2 (n j)', j=x.shape[-1] // 2)
-    cos = repeat(cos, 'b n -> b 2 (n j)', j=x.shape[-1] // 2)
+    # Corrected expansion to match x's shape
+    # The idea is to ensure the last dimension of sin and cos match half of x's last dimension
+    d = x.shape[-1] // 2  # We want to split the last dimension in half
+
+    sin = repeat(sin, 'b n -> b 2 n')[:, :, :d]
+    cos = repeat(cos, 'b n -> b 2 n')[:, :, :d]
 
     # Debug: Print shapes after expanding sin and cos
     print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
@@ -180,6 +183,7 @@ def apply_rotary_pos_emb(x, sincos):
         print(f"Error applying rotary pos emb: {str(e)}")
         print(f"x shape: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
         raise
+
 
 
 
