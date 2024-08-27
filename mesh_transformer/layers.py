@@ -128,7 +128,6 @@ def fixed_pos_embedding(seq_len, dim):
 
 
 def rotate_every_two(x):
-    
     # Debug: Print the initial shape of x
     print(f"rotate_every_two: Input x shape: {x.shape}")
 
@@ -137,13 +136,23 @@ def rotate_every_two(x):
 
     # Debug: Print the shapes after selecting even and odd elements
     print(f"rotate_every_two: x1 shape: {x1.shape}, x2 shape: {x2.shape}")
-    
+
     x = jnp.stack((-x2, x1), axis=-1)
 
     # Debug: Print the shape after stacking
     print(f"rotate_every_two: shape after stacking: {x.shape}")
 
-    return rearrange(x, '... d j -> ... (d j)')
+    # Check if rearranging makes sense given the current shape of x
+    try:
+        reshaped_x = rearrange(x, '... d j -> ... (d j)')
+        print(f"rotate_every_two: Reshaped x shape: {reshaped_x.shape}")
+    except Exception as e:
+        print(f"rotate_every_two: Error in rearrange operation: {str(e)}")
+        print(f"rotate_every_two: x shape before rearrange attempt: {x.shape}")
+        raise ValueError("rotate_every_two: reshaping failed due to incompatible dimensions") from e
+
+    return reshaped_x
+
 
 
 def apply_rotary_pos_emb(x, sincos):
