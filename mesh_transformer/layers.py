@@ -156,31 +156,27 @@ def rotate_every_two(x):
 
 
 def apply_rotary_pos_emb(x, sincos):
-    # Unpack sin and cos
     sin, cos = sincos
 
     # Debug: Print initial shapes
     print(f"apply_rotary_pos_emb: Initial x shape: {x.shape}")
     print(f"apply_rotary_pos_emb: Initial sin shape: {sin.shape}, cos shape: {cos.shape}")
 
-    # Attempt to expand sin and cos to match the shape of x
+    # Correctly expand sin and cos to match x's shape for multiplication
+    # x has shape (2048, 2, 256), we need sin and cos to match this
+    sin = repeat(sin, 'b n -> b 2 (n j)', j=2)
+    cos = repeat(cos, 'b n -> b 2 (n j)', j=2)
+
+    # Debug: Print shapes after expanding sin and cos
+    print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
+
     try:
-        sin = repeat(sin, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]
-        cos = repeat(cos, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]
+        # Apply rotary embedding
+        x_rotary = (x * cos) + (rotate_every_two(x) * sin)
 
-        # Debug: Print shapes after expanding sin and cos
-        print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
-    except Exception as e:
-        print(f"Error expanding sin/cos: {str(e)}")
-        raise
-
-    # Check if rotate_every_two is being called
-    try:
-        result = (x * cos) + (rotate_every_two(x) * sin)
-
-        # Debug: Print shapes after applying rotary pos emb
-        print(f"apply_rotary_pos_emb: Resulting shape: {result.shape}")
-        return result
+        # Debug: Print the resulting shape
+        print(f"apply_rotary_pos_emb: Resulting shape: {x_rotary.shape}")
+        return x_rotary
     except Exception as e:
         print(f"Error applying rotary pos emb: {str(e)}")
         print(f"x shape: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
