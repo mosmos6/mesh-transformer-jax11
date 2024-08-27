@@ -156,33 +156,36 @@ def rotate_every_two(x):
 
 
 def apply_rotary_pos_emb(x, sincos):
+    # Unpack sin and cos
     sin, cos = sincos
 
     # Debug: Print initial shapes
     print(f"apply_rotary_pos_emb: Initial x shape: {x.shape}")
     print(f"apply_rotary_pos_emb: Initial sin shape: {sin.shape}, cos shape: {cos.shape}")
 
-    # Corrected expansion to match x's shape
-    # The idea is to ensure the last dimension of sin and cos match half of x's last dimension
-    d = x.shape[-1] // 2  # We want to split the last dimension in half
-
-    sin = repeat(sin, 'b n -> b 2 n')[:, :, :d]
-    cos = repeat(cos, 'b n -> b 2 n')[:, :, :d]
-
-    # Debug: Print shapes after expanding sin and cos
-    print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
-
+    # Attempt to expand sin and cos to match the shape of x
     try:
-        # Apply rotary embedding
-        x_rotary = (rotate_every_two(x) * sin) + (x * cos)
+        sin = repeat(sin, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]
+        cos = repeat(cos, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]
 
-        # Debug: Print the resulting shape
-        print(f"apply_rotary_pos_emb: Resulting shape: {x_rotary.shape}")
-        return x_rotary
+        # Debug: Print shapes after expanding sin and cos
+        print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
+    except Exception as e:
+        print(f"Error expanding sin/cos: {str(e)}")
+        raise
+
+    # Check if rotate_every_two is being called
+    try:
+        result = (x * cos) + (rotate_every_two(x) * sin)
+
+        # Debug: Print shapes after applying rotary pos emb
+        print(f"apply_rotary_pos_emb: Resulting shape: {result.shape}")
+        return result
     except Exception as e:
         print(f"Error applying rotary pos emb: {str(e)}")
         print(f"x shape: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
         raise
+
 
 
 
