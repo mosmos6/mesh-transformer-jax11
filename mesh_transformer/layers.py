@@ -162,28 +162,10 @@ def apply_rotary_pos_emb(x, sincos):
     print(f"apply_rotary_pos_emb: Initial x shape: {x.shape}")
     print(f"apply_rotary_pos_emb: Initial sin shape: {sin.shape}, cos shape: {cos.shape}")
 
-    # Correctly expand sin and cos to match x's shape for multiplication
-    # x has shape (2048, 2, 256), we need sin and cos to match this
-    sin = repeat(sin, 'b n -> b 2 (n j)', j=2)
-    cos = repeat(cos, 'b n -> b 2 (n j)', j=2)
+    sin = repeat(sin, 'b n -> b (n j)', j=2)[:, :x.shape[-1]]  # Expand sin shape to match x
+    cos = repeat(cos, 'b n -> b (n j)', j=2)[:, :x.shape[-1]]  # Expand cos shape to match x
 
-    # Debug: Print shapes after expanding sin and cos
-    print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
-
-    try:
-        # Apply rotary embedding
-        x_rotary = (x * cos) + (rotate_every_two(x) * sin)
-
-        # Debug: Print the resulting shape
-        print(f"apply_rotary_pos_emb: Resulting shape: {x_rotary.shape}")
-        return x_rotary
-    except Exception as e:
-        print(f"Error applying rotary pos emb: {str(e)}")
-        print(f"x shape: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
-        raise
-
-
-
+    return (x * cos) + (rotate_every_two(x) * sin)
 
 
 
@@ -275,23 +257,21 @@ class TransformerLayerShard(nn.Module):
             q = apply_rotary_pos_emb(q, sincos)
             k = apply_rotary_pos_emb(k, sincos)
 
-        # Ensure batch dimension is present
-        q = q.reshape(1, q.shape[0], q.shape[1], q.shape[2])  # (1, 2048, 2, 256)
-        k = k.reshape(1, k.shape[0], k.shape[1], k.shape[2])  # (1, 2048, 2, 256)
-    
+        # No need to reshape q and k to add batch dimensions; use them directly
         print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
 
-        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
+        attention_logits = jnp.einsum("thd,Thd->htT", q, k)
         print(f"self_attn: Attention logits shape: {attention_logits.shape}")  # Debug
 
         attention_weights = jax.nn.softmax(attention_logits)
-    
-        v = v.reshape(1, v.shape[0], v.shape[1], v.shape[2])  # Adjust v shape to include batch size
-        print(f"self_attn: Adjusted v shape for einsum: {v.shape}")  # Debug
-    
-        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
-    
+        print(f"self_attn: Attention weights shape: {attention_weights.shape}")  # Debug
+
+        # Adjust v as well to align with 3D processing
+        attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        print(f"self_attn: Attention vec shape: {attention_vec.shape}")  # Debug
+
         return self.o(attention_vec)
+
 
 
 
