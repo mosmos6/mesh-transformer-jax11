@@ -270,22 +270,27 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
-        print(f"self_attn: Initial q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")  # Debug: Before rotary embeddings
         if self.is_rotary:
             sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims)
             q = apply_rotary_pos_emb(q, sincos)
             k = apply_rotary_pos_emb(k, sincos)
 
+        # Adjusting q and k shapes to add an extra batch dimension if needed
+        if len(q.shape) == 3:
+            q = q[:, None, :, :]  # Adding a batch dimension
+            k = k[:, None, :, :]
+
+        print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")
+
         # Perform attention calculations with the simplified einsum string
         attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
-        print(f"self_attn: Attention logits shape: {attention_logits.shape}")  # Debug: Attention logits shape
-
+        print(f"self_attn: Attention logits shape: {attention_logits.shape}")
+    
         attention_weights = jax.nn.softmax(attention_logits)
         attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
-        print(f"self_attn: Attention vec shape: {attention_vec.shape}")  # Debug: Attention vector shape
 
-    
         return self.o(attention_vec)
+
 
 
 
