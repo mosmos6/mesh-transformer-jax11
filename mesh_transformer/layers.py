@@ -166,8 +166,8 @@ def apply_rotary_pos_emb(x, sincos):
 
     # Expand sin and cos to match the shape of x
     # sin and cos should be (2048, 2, 256) to match x's shape
-    sin = repeat(sin, 'b n -> b 2 n')[:, :, :x.shape[-1]]  # (2048, 2, 256)
-    cos = repeat(cos, 'b n -> b 2 n')[:, :, :x.shape[-1]]  # (2048, 2, 256)
+    sin = repeat(sin, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]  # (2048, 2, 256)
+    cos = repeat(sin, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]  # (2048, 2, 256)
 
     # Debug: Print expanded shapes
     print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
