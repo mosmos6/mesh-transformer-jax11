@@ -301,7 +301,7 @@ class TransformerLayerShard(nn.Module):
         print(f"ff: Input shape: {x.shape}")  # Debug: Input to feedforward
         dense_proj = self.dense_proj(x)
         dense_proj = jax.nn.gelu(dense_proj)
-        print(f"ff: Output shape: {output.shape}")  # Debug: Output from feedforward
+        print(f"ff: Output shape: {x.shape}")  # Debug: Output from feedforward
 
         return self.dense_proj_o(dense_proj)
 
