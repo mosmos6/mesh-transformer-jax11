@@ -275,21 +275,24 @@ class TransformerLayerShard(nn.Module):
             q = apply_rotary_pos_emb(q, sincos)
             k = apply_rotary_pos_emb(k, sincos)
 
-        # Adjusting q and k shapes to add an extra batch dimension if needed
-        if len(q.shape) == 3:
-            q = q[:, None, :, :]  # Adding a batch dimension
-            k = k[:, None, :, :]
-
-        print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")
-
-        # Perform attention calculations with the simplified einsum string
-        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
-        print(f"self_attn: Attention logits shape: {attention_logits.shape}")
+        # Ensure batch dimension is present
+        q = q.reshape(1, q.shape[0], q.shape[1], q.shape[2])  # (1, 2048, 2, 256)
+        k = k.reshape(1, k.shape[0], k.shape[1], k.shape[2])  # (1, 2048, 2, 256)
     
-        attention_weights = jax.nn.softmax(attention_logits)
-        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
 
+        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
+        print(f"self_attn: Attention logits shape: {attention_logits.shape}")  # Debug
+
+        attention_weights = jax.nn.softmax(attention_logits)
+    
+        v = v.reshape(1, v.shape[0], v.shape[1], v.shape[2])  # Adjust v shape to include batch size
+        print(f"self_attn: Adjusted v shape for einsum: {v.shape}")  # Debug
+    
+        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape((-1, self.dim_per_shard))
+    
         return self.o(attention_vec)
+
 
 
 
