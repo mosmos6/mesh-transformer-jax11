@@ -160,20 +160,19 @@ from einops import repeat
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
 
-    # Debug: Print initial shapes
-    print(f"apply_rotary_pos_emb: Initial x shape: {x.shape}")
-    print(f"apply_rotary_pos_emb: Initial sin shape: {sin.shape}, cos shape: {cos.shape}")
-
     # Expand sin and cos to match the shape of x
-    # sin and cos should be (2048, 2, 256) to match x's shape
-    sin = repeat(sin, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]  # (2048, 2, 256)
-    cos = repeat(sin, 'b n -> b 2 (n j)', j=2)[:, :, :x.shape[-1]]  # (2048, 2, 256)
+    sin = repeat(sin, 's d -> s 1 d', d=sin.shape[-1])
+    cos = repeat(cos, 's d -> s 1 d', d=cos.shape[-1])
+    
+    # Ensure sin and cos are reshaped to align with x's shape for broadcasting
+    sin = sin[:, :, :x.shape[-1]]
+    cos = cos[:, :, :x.shape[-1]]
 
-    # Debug: Print expanded shapes
+    # Debug: Print expanded sin and cos shapes
     print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
 
-    # Return the rotary position embedding applied to x
     return (x * cos) + (rotate_every_two(x) * sin)
+
 
 
 
