@@ -160,18 +160,15 @@ from einops import repeat
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
 
-    # Ensure sin and cos match the dimensions of x for the rotary portion
-    sin = repeat(sin, 's d -> s 1 (d j)', j=2)[:, :, :x.shape[-1]]
-    cos = repeat(cos, 's d -> s 1 (d j)', j=2)[:, :, :x.shape[-1]]
+    # Adjust to match shapes
+    sin = jnp.repeat(sin[:, None, :], repeats=x.shape[1], axis=1)  # Repeat for batch dimension
+    cos = jnp.repeat(cos[:, None, :], repeats=x.shape[1], axis=1)
 
     # Debug: Print expanded sin and cos shapes
     print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
 
     return (x * cos) + (rotate_every_two(x) * sin)
 
-
-    # sin = repeat(sin, 's d -> s 2 d', d=sin.shape[-1])
-    # cos = repeat(cos, 's d -> s 2 d', d=cos.shape[-1])
 
 
 
