@@ -161,8 +161,8 @@ def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
 
     # Expand sin and cos to match the shape of x
-    sin = repeat(sin, 's d -> s 1 d', d=sin.shape[-1])
-    cos = repeat(cos, 's d -> s 1 d', d=cos.shape[-1])
+    sin = repeat(sin, 's d -> s 2 d', d=sin.shape[-1])
+    cos = repeat(cos, 's d -> s 2 d', d=cos.shape[-1])
     
     # Ensure sin and cos are reshaped to align with x's shape for broadcasting
     sin = sin[:, :, :x.shape[-1]]
