@@ -292,13 +292,16 @@ class TransformerLayerShard(nn.Module):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
+        
         print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
-        q = self.q(x).reshape(x.shape[:1] + (self.heads_per_shard, self.dim_per_head))
-        v = self.v(x).reshape(x.shape[:1] + (self.heads_per_shard, self.dim_per_head))
-        k = self.k(x).reshape(x.shape[:1] + (self.heads_per_shard, self.dim_per_head))
+        # Remove unnecessary dimension expansion by reshaping to match intended dimensions
+        q = self.q(x).reshape((x.shape[0], x.shape[1], self.dim_per_head))  # (seq, batch, d_head)
+        v = self.v(x).reshape((x.shape[0], x.shape[1], self.dim_per_head))
+        k = self.k(x).reshape((x.shape[0], x.shape[1], self.dim_per_head))
         print(f"qvk_proj: Output q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")  # Debug: After qvk_proj
 
         return q, v, k
+
 
 
     def __call__(self, x, attn_bias):
