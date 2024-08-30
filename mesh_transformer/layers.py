@@ -248,13 +248,13 @@ class TransformerLayerShard(nn.Module):
         self.dim_per_shard = self.dim // self.shards
         self.pe_rotary_dims = self.config.get("pe_rotary_dims", self.dim_per_head)
 
-        self.q = nn.Dense(self.dim_per_shard, use_bias=False)  # Use instance attributes now
-        self.v = nn.Dense(self.dim_per_shard, use_bias=False)
-        self.k = nn.Dense(self.dim_per_shard, use_bias=False)
+        self.q = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)  # Use instance attributes now
+        self.v = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)
+        self.k = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)
         
         self.o = nn.Dense(self.dim, use_bias=False, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
-        self.dense_proj = nn.Dense(self.dim_per_shard * 4)
+        self.dense_proj = nn.Dense(self.dim * 4)
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias):
