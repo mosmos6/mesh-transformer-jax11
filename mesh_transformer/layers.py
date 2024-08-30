@@ -159,15 +159,20 @@ from einops import repeat
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
+    print(f"apply_rotary_pos_emb: Initial x shape: {x.shape}")
+    
+    # Expand sin and cos to match the shape of x, which should be (seq, batch, n_heads, d_head)
+    sin = repeat(sin, 'b n -> b 1 n j', j=2)[:, :, :x.shape[-2], :x.shape[-1]//2]  # Adjust to match shape
+    cos = repeat(cos, 'b n -> b 1 n j', j=2)[:, :, :x.shape[-2], :x.shape[-1]//2]  # Adjust to match shape
 
-    # Adjust to match shapes
-    sin = jnp.repeat(sin[:, None, :], repeats=x.shape[1], axis=1)  # Repeat for batch dimension
-    cos = jnp.repeat(cos[:, None, :], repeats=x.shape[1], axis=1)
+    # Concatenate and rearrange sin and cos to match x's shape
+    sin = sin.reshape(sin.shape[0], sin.shape[1], sin.shape[2] * 2)
+    cos = cos.reshape(cos.shape[0], cos.shape[1], cos.shape[2] * 2)
 
-    # Debug: Print expanded sin and cos shapes
     print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
 
     return (x * cos) + (rotate_every_two(x) * sin)
+
 
 
 
@@ -289,9 +294,9 @@ class TransformerLayerShard(nn.Module):
     def qvk_proj(self, x):
         
         print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
-        q = self.q(x).reshape((x.shape[0], x.shape[1], x.shape[-1]))
-        v = self.v(x).reshape((x.shape[0], x.shape[1], x.shape[-1]))
-        k = self.k(x).reshape((x.shape[0], x.shape[1], x.shape[-1]))
+        q = self.q(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+        v = self.v(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+        k = self.k(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
         print(f"qvk_proj: Output q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")  # Debug: After qvk_proj
 
         return q, v, k
