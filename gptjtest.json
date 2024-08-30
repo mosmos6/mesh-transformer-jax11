@@ -48,6 +48,5 @@
 
   "name": "gptjtestdummy",
   "wandb_project": "mesh-transformer-jax",
-  "comment": "",
-  "dim_per_shard": 6300
+  "comment": ""
 }
