@@ -245,9 +245,9 @@ class TransformerLayerShard(nn.Module):
 
         self.norm = norm
 
-        self.q = nn.Dense(self.dim_per_shard, use_bias=False)
-        self.v = nn.Dense(self.dim_per_shard, use_bias=False)
-        self.k = nn.Dense(self.dim_per_shard, use_bias=False)
+        self.q = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)
+        self.v = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)
+        self.k = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)
 
         self.o = nn.Dense(self.dim, use_bias=False, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
@@ -291,13 +291,13 @@ class TransformerLayerShard(nn.Module):
     def qvk_proj(self, x):
         
         print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
-        # Remove unnecessary dimension expansion by reshaping to match intended dimensions
-        q = self.q(x).reshape((x.shape[0], x.shape[1], self.dim_per_head))  # (seq, batch, d_head)
-        v = self.v(x).reshape((x.shape[0], x.shape[1], self.dim_per_head))
-        k = self.k(x).reshape((x.shape[0], x.shape[1], self.dim_per_head))
+        q = self.q(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+        v = self.v(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+        k = self.k(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
         print(f"qvk_proj: Output q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")  # Debug: After qvk_proj
 
         return q, v, k
+
 
 
 
