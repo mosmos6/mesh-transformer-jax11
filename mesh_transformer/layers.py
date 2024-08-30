@@ -111,20 +111,12 @@ class RelativePositionEmbs(nn.Module):
         return values
 
 
-def fixed_pos_embedding(seq_len, dim):
-    inv_freq = 1. / (10000 ** (np.arange(0, dim, 2) / dim))
-    position = np.arange(0, seq_len, dtype=np.float32)
-    sinusoid_inp = np.einsum('i,j->ij', position, inv_freq)
-    
-    sin = np.sin(sinusoid_inp)
-    cos = np.cos(sinusoid_inp)
-    
-    # Ensure sin and cos match the pe_rotary_dims (dim) exactly
-    sin = np.concatenate([sin, sin], axis=-1)[:, :dim]
-    cos = np.concatenate([cos, cos], axis=-1)[:, :dim]
-    
-    return jnp.array(sin, dtype=jnp.float32), jnp.array(cos, dtype=jnp.float32)
-
+def fixed_pos_embedding(seq_len, rotary_dim):
+    # Create sin and cos matrices with shapes matching the expanded head dimension
+    theta = np.arange(seq_len)[:, None] / np.power(10000, (2 * (np.arange(rotary_dim) // 2)) / np.float32(rotary_dim))
+    sin = np.sin(theta).astype(np.float32)
+    cos = np.cos(theta).astype(np.float32)
+    return sin, cos
 
 
 def rotate_every_two(x):
@@ -158,20 +150,19 @@ def rotate_every_two(x):
 from einops import repeat
 
 def apply_rotary_pos_emb(x, sincos):
-    sin, cos = sincos
-    print(f"apply_rotary_pos_emb: Initial x shape: {x.shape}")
     
-    # Expand sin and cos to match the shape of x, which should be (seq, batch, n_heads, d_head)
-    sin = repeat(sin, 'b n -> b 1 n j', j=2)[:, :, :x.shape[-2], :x.shape[-1]//2]  # Adjust to match shape
-    cos = repeat(cos, 'b n -> b 1 n j', j=2)[:, :, :x.shape[-2], :x.shape[-1]//2]  # Adjust to match shape
+    sin, cos = sincos
+    sin = repeat(sin, 'b n -> b 1 n j', j=2)[..., :x.shape[-1] // 2]
+    cos = repeat(cos, 'b n -> b 1 n j', j=2)[..., :x.shape[-1] // 2]
 
-    # Concatenate and rearrange sin and cos to match x's shape
-    sin = sin.reshape(sin.shape[0], sin.shape[1], sin.shape[2] * 2)
-    cos = cos.reshape(cos.shape[0], cos.shape[1], cos.shape[2] * 2)
+    x1, x2 = x[..., ::2], x[..., 1::2]
+    x1 = (x1 * cos) - (x2 * sin)
+    x2 = (x2 * cos) + (x1 * sin)
 
-    print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
+    x = rearrange(jnp.stack((x1, x2), axis=-1), '... d j -> ... (d j)')
+    print(f"apply_rotary_pos_emb: Resulting shape: {x.shape}")
+    return x
 
-    return (x * cos) + (rotate_every_two(x) * sin)
 
 
 
