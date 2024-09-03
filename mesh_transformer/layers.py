@@ -111,8 +111,7 @@ class RelativePositionEmbs(nn.Module):
         return values
 
 
-def fixed_pos_embedding(seq_len, rotary_dim):
-    # Generates fixed sinusoidal embeddings for rotary dimensions
+def fixed_pos_embedding(seq_len, rotary_dim, n_heads):
     position = np.arange(seq_len, dtype=np.float32)[:, None]  # Shape: (seq_len, 1)
     div_term = np.exp(np.arange(0, rotary_dim, 2, dtype=np.float32) * -(np.log(10000.0) / rotary_dim))
     angle_rads = position * div_term  # Shape: (seq_len, rotary_dim / 2)
@@ -121,11 +120,12 @@ def fixed_pos_embedding(seq_len, rotary_dim):
     cos = np.cos(angle_rads)  # Shape: (seq_len, rotary_dim / 2)
 
     # Expand dimensions to match the expected input format
-    sin = np.repeat(sin[:, None, :], 2, axis=-1).reshape(seq_len, 1, -1)  # Shape: (seq_len, 1, rotary_dim)
-    cos = np.repeat(cos[:, None, :], 2, axis=-1).reshape(seq_len, 1, -1)  # Shape: (seq_len, 1, rotary_dim)
+    sin = np.tile(sin[:, None, :], (1, n_heads, 2)).reshape(seq_len, 1, n_heads, rotary_dim)  # Shape: (seq_len, 1, n_heads, rotary_dim)
+    cos = np.tile(cos[:, None, :], (1, n_heads, 2)).reshape(seq_len, 1, n_heads, rotary_dim)  # Shape: (seq_len, 1, n_heads, rotary_dim)
+    print(f"cos shape after fixed_pos_embedding: {cos.shape}")  # Debug
+    print(f"sin shape after fixed_pos_embedding: {sin.shape}")  # Debug
     return sin, cos
-
-
+    
 
 def rotate_every_two(x):
     # Debug: Print the initial shape of x
@@ -160,21 +160,18 @@ from einops import repeat
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
 
-    # Check if sin and cos need to be expanded further
-    if sin.shape[-1] < x.shape[-1]:
-        expand_factor = x.shape[-1] // sin.shape[-1]
-        sin = np.repeat(sin, expand_factor, axis=-1)  # Expand sin to match x
-        cos = np.repeat(cos, expand_factor, axis=-1)  # Expand cos to match x
-
-    print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
+    # Ensure sin and cos are compatible with x
+    assert x.shape == sin.shape == cos.shape, f"Shapes of x: {x.shape}, sin: {sin.shape}, cos: {cos.shape} do not match!"
 
     x1, x2 = x[..., ::2], x[..., 1::2]
+    sin, cos = sin[..., :x1.shape[-1]], cos[..., :x1.shape[-1]]  # Adjust sin and cos to match x1 and x2 shapes
+
     x1 = (x1 * cos) - (x2 * sin)
     x2 = (x2 * cos) + (x1 * sin)
 
     x = jnp.concatenate([x1, x2], axis=-1)
-    print(f"apply_rotary_pos_emb: Resulting shape: {x.shape}")
     return x
+
 
 
 class EmbeddingShard(nn.Module):
