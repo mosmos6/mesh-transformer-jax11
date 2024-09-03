@@ -159,21 +159,19 @@ from einops import repeat
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
+    # Expand sin and cos to match the last dimension of x
+    sin = sin.repeat(2, axis=-1)
+    cos = cos.repeat(2, axis=-1)
     
-    # Only apply rotary embedding to the first `pe_rotary_dims` of the head dimension
-    x1, x2 = x[..., :sin.shape[-1]], x[..., sin.shape[-1]:]
-
-    x1_sin, x1_cos = sin[..., :x1.shape[-1]], cos[..., :x1.shape[-1]]
-
-    # Rotate x1 using sin and cos
-    x1_rotated = (x1 * x1_cos) + (rotate_every_two(x1) * x1_sin)
-
-    # Concatenate the rotated part with the untouched part
-    x_rotated = jnp.concatenate([x1_rotated, x2], axis=-1)
+    # Ensure sin and cos have the same shape as x
+    assert sin.shape == x[..., :sin.shape[-1]].shape, f"Shapes of x: {x.shape}, sin: {sin.shape}, cos: {cos.shape} do not match!"
     
-    return x_rotated
-
-
+    x1, x2 = x[..., ::2], x[..., 1::2]
+    x1 = (x1 * cos) - (x2 * sin)
+    x2 = (x2 * cos) + (x1 * sin)
+    
+    # Combine x1 and x2 back together
+    return jnp.stack([x1, x2], axis=-1).reshape(x.shape)
 
 
 class EmbeddingShard(nn.Module):
