@@ -256,7 +256,7 @@ class TransformerLayerShard(nn.Module):
 
     def self_attn(self, q, v, k, attn_bias):
         if self.is_rotary:
-            sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims)
+            sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims, self.n_heads)
             q = apply_rotary_pos_emb(q, sincos)
             k = apply_rotary_pos_emb(k, sincos)
 
