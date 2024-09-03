@@ -6,7 +6,7 @@
   "n_vocab": 50400,
   "norm": "layernorm",
   "pe": "rotary",
-  "pe_rotary_dims": 128,
+  "pe_rotary_dims": 64,
 
   "seq": 2048,
   "cores_per_replica": 8,
