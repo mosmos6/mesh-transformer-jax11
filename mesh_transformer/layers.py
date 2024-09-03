@@ -159,18 +159,20 @@ from einops import repeat
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
+    
+    # Only apply rotary embedding to the first `pe_rotary_dims` of the head dimension
+    x1, x2 = x[..., :sin.shape[-1]], x[..., sin.shape[-1]:]
 
-    # Ensure sin and cos are compatible with x
-    assert x.shape == sin.shape == cos.shape, f"Shapes of x: {x.shape}, sin: {sin.shape}, cos: {cos.shape} do not match!"
+    x1_sin, x1_cos = sin[..., :x1.shape[-1]], cos[..., :x1.shape[-1]]
 
-    x1, x2 = x[..., ::2], x[..., 1::2]
-    sin, cos = sin[..., :x1.shape[-1]], cos[..., :x1.shape[-1]]  # Adjust sin and cos to match x1 and x2 shapes
+    # Rotate x1 using sin and cos
+    x1_rotated = (x1 * x1_cos) + (rotate_every_two(x1) * x1_sin)
 
-    x1 = (x1 * cos) - (x2 * sin)
-    x2 = (x2 * cos) + (x1 * sin)
+    # Concatenate the rotated part with the untouched part
+    x_rotated = jnp.concatenate([x1_rotated, x2], axis=-1)
+    
+    return x_rotated
 
-    x = jnp.concatenate([x1, x2], axis=-1)
-    return x
 
 
 
