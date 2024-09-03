@@ -160,11 +160,11 @@ from einops import repeat
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
     # Expand sin and cos to match the last dimension of x
-    sin = sin.repeat(2, axis=-1)
-    cos = cos.repeat(2, axis=-1)
+    #sin = sin.repeat(2, axis=-1)
+    #cos = cos.repeat(2, axis=-1)
     
     # Ensure sin and cos have the same shape as x
-    assert sin.shape == x[..., :sin.shape[-1]].shape, f"Shapes of x: {x.shape}, sin: {sin.shape}, cos: {cos.shape} do not match!"
+    #assert sin.shape == x[..., :sin.shape[-1]].shape, f"Shapes of x: {x.shape}, sin: {sin.shape}, cos: {cos.shape} do not match!"
     
     x1, x2 = x[..., ::2], x[..., 1::2]
     x1 = (x1 * cos) - (x2 * sin)
