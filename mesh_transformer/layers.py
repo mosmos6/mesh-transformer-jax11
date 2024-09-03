@@ -112,11 +112,19 @@ class RelativePositionEmbs(nn.Module):
 
 
 def fixed_pos_embedding(seq_len, rotary_dim):
-    # Create sin and cos matrices with shapes matching the expanded head dimension
-    theta = np.arange(seq_len)[:, None] / np.power(10000, (2 * (np.arange(rotary_dim) // 2)) / np.float32(rotary_dim))
-    sin = np.sin(theta).astype(np.float32)
-    cos = np.cos(theta).astype(np.float32)
+    # Generates fixed sinusoidal embeddings for rotary dimensions
+    position = np.arange(seq_len, dtype=np.float32)[:, None]  # Shape: (seq_len, 1)
+    div_term = np.exp(np.arange(0, rotary_dim, 2, dtype=np.float32) * -(np.log(10000.0) / rotary_dim))
+    angle_rads = position * div_term  # Shape: (seq_len, rotary_dim / 2)
+
+    sin = np.sin(angle_rads)  # Shape: (seq_len, rotary_dim / 2)
+    cos = np.cos(angle_rads)  # Shape: (seq_len, rotary_dim / 2)
+
+    # Expand dimensions to match the expected input format
+    sin = np.repeat(sin[:, None, :], 2, axis=-1).reshape(seq_len, 1, -1)  # Shape: (seq_len, 1, rotary_dim)
+    cos = np.repeat(cos[:, None, :], 2, axis=-1).reshape(seq_len, 1, -1)  # Shape: (seq_len, 1, rotary_dim)
     return sin, cos
+
 
 
 def rotate_every_two(x):
@@ -150,22 +158,23 @@ def rotate_every_two(x):
 from einops import repeat
 
 def apply_rotary_pos_emb(x, sincos):
-    
     sin, cos = sincos
-    sin = repeat(sin, 'b n -> b 1 n j', j=2)[..., :x.shape[-1] // 2]
-    cos = repeat(cos, 'b n -> b 1 n j', j=2)[..., :x.shape[-1] // 2]
+
+    # Check if sin and cos need to be expanded further
+    if sin.shape[-1] < x.shape[-1]:
+        expand_factor = x.shape[-1] // sin.shape[-1]
+        sin = np.repeat(sin, expand_factor, axis=-1)  # Expand sin to match x
+        cos = np.repeat(cos, expand_factor, axis=-1)  # Expand cos to match x
+
+    print(f"apply_rotary_pos_emb: Expanded sin shape: {sin.shape}, cos shape: {cos.shape}")
 
     x1, x2 = x[..., ::2], x[..., 1::2]
     x1 = (x1 * cos) - (x2 * sin)
     x2 = (x2 * cos) + (x1 * sin)
 
-    x = rearrange(jnp.stack((x1, x2), axis=-1), '... d j -> ... (d j)')
+    x = jnp.concatenate([x1, x2], axis=-1)
     print(f"apply_rotary_pos_emb: Resulting shape: {x.shape}")
     return x
-
-
-
-
 
 
 class EmbeddingShard(nn.Module):
