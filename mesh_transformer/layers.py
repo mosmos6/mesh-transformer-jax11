@@ -262,14 +262,14 @@ class TransformerLayerShard(nn.Module):
         # No need to reshape q and k to add batch dimensions; use them directly
         print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
 
-        attention_logits = jnp.einsum("thd,Thd->htT", q, k)
+        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
         print(f"self_attn: Attention logits shape: {attention_logits.shape}")  # Debug
 
         attention_weights = jax.nn.softmax(attention_logits)
         print(f"self_attn: Attention weights shape: {attention_weights.shape}")  # Debug
 
         # Adjust v as well to align with 3D processing
-        attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
+        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape(q.shape[0], q.shape[1], -1)
         print(f"self_attn: Attention vec shape: {attention_vec.shape}")  # Debug
 
         return self.o(attention_vec)
