@@ -137,21 +137,18 @@ def rotate_every_two(x):
     # Debug: Print the shapes after selecting even and odd elements
     print(f"rotate_every_two: x1 shape: {x1.shape}, x2 shape: {x2.shape}")
 
+    # Combine x1 and x2 back together after rotation
     x = jnp.stack((-x2, x1), axis=-1)
 
     # Debug: Print the shape after stacking
     print(f"rotate_every_two: shape after stacking: {x.shape}")
 
-    # Check if rearranging makes sense given the current shape of x
-    try:
-        reshaped_x = rearrange(x, '... d j -> ... (d j)')
-        print(f"rotate_every_two: Reshaped x shape: {reshaped_x.shape}")
-    except Exception as e:
-        print(f"rotate_every_two: Error in rearrange operation: {str(e)}")
-        print(f"rotate_every_two: x shape before rearrange attempt: {x.shape}")
-        raise ValueError("rotate_every_two: reshaping failed due to incompatible dimensions") from e
+    # Rearrange to original shape with doubled last dimension
+    reshaped_x = rearrange(x, '... d j -> ... (d j)')
+    print(f"rotate_every_two: Reshaped x shape: {reshaped_x.shape}")
 
     return reshaped_x
+
 
 
 
@@ -159,27 +156,20 @@ from einops import repeat
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
-    
-    # Repeat sin and cos along the last dimension to match x's last dimension
-    sin = sin.repeat(2, axis=-1)
-    cos = cos.repeat(2, axis=-1)
-    
-    # Extract and correctly align x1 and x2 to match doubled sin and cos
-    x1 = x[..., ::2]  # (batch, seq_len, heads, 128)
-    x2 = x[..., 1::2]  # (batch, seq_len, heads, 128)
-    
-    # This step must be done before using x1 and x2 to prevent overwriting issues
-    # Pre-calculated for broadcasting without interference
-    rotated_x1 = (x1 * cos) - (x2 * sin)
-    rotated_x2 = (x2 * cos) + (x1 * sin)
 
-    # Combine x1 and x2 back together into the original shape
-    # Ensuring that the operation returns the result in (batch, seq_len, heads, 256)
-    x_out = jnp.empty_like(x)  # Initialize with the same shape as x
-    x_out = x_out.at[..., ::2].set(rotated_x1)
-    x_out = x_out.at[..., 1::2].set(rotated_x2)
-    
-    return x_out
+    # Expand sin and cos to match x's shape
+    sin = repeat(sin, 'b n h d -> b n h (d j)', j=2)
+    cos = repeat(cos, 'b n h d -> b n h (d j)', j=2)
+
+    # Debug: Ensure that x and sin, cos shapes are aligned for broadcasting
+    print(f"apply_rotary_pos_emb: x shape: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
+    assert x.shape == sin.shape == cos.shape, f"Shapes of x: {x.shape}, sin: {sin.shape}, cos: {cos.shape} do not match!"
+
+    # Apply sin and cos rotations
+    x = x * cos + rotate_every_two(x) * sin
+
+    return x
+
 
 
 
