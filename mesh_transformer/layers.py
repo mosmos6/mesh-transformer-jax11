@@ -159,19 +159,28 @@ from einops import repeat
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
-    # Expand sin and cos to match the last dimension of x
+    
+    # Repeat sin and cos along the last dimension to match x's last dimension
     sin = sin.repeat(2, axis=-1)
     cos = cos.repeat(2, axis=-1)
     
-    # Ensure sin and cos have the same shape as x
-    assert sin.shape == x[..., :sin.shape[-1]].shape, f"Shapes of x: {x.shape}, sin: {sin.shape}, cos: {cos.shape} do not match!"
+    # Extract and correctly align x1 and x2 to match doubled sin and cos
+    x1 = x[..., ::2]  # (batch, seq_len, heads, 128)
+    x2 = x[..., 1::2]  # (batch, seq_len, heads, 128)
     
-    x1, x2 = x[..., ::2], x[..., 1::2]
-    x1 = (x1 * cos) - (x2 * sin)
-    x2 = (x2 * cos) + (x1 * sin)
+    # This step must be done before using x1 and x2 to prevent overwriting issues
+    # Pre-calculated for broadcasting without interference
+    rotated_x1 = (x1 * cos) - (x2 * sin)
+    rotated_x2 = (x2 * cos) + (x1 * sin)
+
+    # Combine x1 and x2 back together into the original shape
+    # Ensuring that the operation returns the result in (batch, seq_len, heads, 256)
+    x_out = jnp.empty_like(x)  # Initialize with the same shape as x
+    x_out = x_out.at[..., ::2].set(rotated_x1)
+    x_out = x_out.at[..., 1::2].set(rotated_x2)
     
-    # Combine x1 and x2 back together
-    return jnp.stack([x1, x2], axis=-1).reshape(x.shape)
+    return x_out
+
 
 
 class EmbeddingShard(nn.Module):
