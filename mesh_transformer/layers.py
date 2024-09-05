@@ -304,6 +304,8 @@ class TransformerLayerShard(nn.Module):
         x = self.norm(x)
         q, v, k = self.qvk_proj(x)
         attn_out = self.self_attn(q, v, k, attn_bias)
+        # Combine heads back into the original dimensionality
+        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.dim))  # seq_len, batch, d_model (4096)
         dense_out = self.ff(x)
         return jax.lax.psum(attn_out + dense_out, axis_name='mp')
 
