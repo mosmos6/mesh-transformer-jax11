@@ -111,20 +111,22 @@ class RelativePositionEmbs(nn.Module):
         return values
 
 
-def fixed_pos_embedding(seq_len, rotary_dim, n_heads):
-    position = np.arange(seq_len, dtype=np.float32)[:, None]  # Shape: (seq_len, 1)
-    div_term = np.exp(np.arange(0, rotary_dim, 2, dtype=np.float32) * -(np.log(10000.0) / rotary_dim))
-    angle_rads = position * div_term  # Shape: (seq_len, rotary_dim / 2)
-
-    sin = np.sin(angle_rads)  # Shape: (seq_len, rotary_dim / 2)
-    cos = np.cos(angle_rads)  # Shape: (seq_len, rotary_dim / 2)
-
-    # Expand dimensions to match the expected input format
-    sin = np.tile(sin[:, None, :], (1, n_heads, 2)).reshape(seq_len, 1, n_heads, rotary_dim)  # Shape: (seq_len, 1, n_heads, rotary_dim)
-    cos = np.tile(cos[:, None, :], (1, n_heads, 2)).reshape(seq_len, 1, n_heads, rotary_dim)  # Shape: (seq_len, 1, n_heads, rotary_dim)
-    print(f"cos shape after fixed_pos_embedding: {cos.shape}")  # Debug
-    print(f"sin shape after fixed_pos_embedding: {sin.shape}")  # Debug
+def fixed_pos_embedding(seq_len, n_heads, dim_per_head):
+    theta = jnp.arange(0, dim_per_head // 2, dtype=jnp.float32)
+    theta = 1.0 / (10000 ** (2 * theta / dim_per_head))
+    
+    seq = jnp.arange(seq_len, dtype=jnp.float32)
+    theta = seq[:, None] * theta[None, :]
+    
+    sin = jnp.sin(theta)
+    cos = jnp.cos(theta)
+    
+    # Expand dimensions to match input tensors
+    sin = sin[:, None, None, :].repeat(n_heads, axis=1)
+    cos = cos[:, None, None, :].repeat(n_heads, axis=1)
+    
     return sin, cos
+
     
 
 def rotate_every_two(x):
@@ -156,19 +158,22 @@ from einops import repeat
 
 def apply_rotary_pos_emb(x, sincos):
     sin, cos = sincos
-
-    # Expand sin and cos to match x's shape
-    sin = repeat(sin, 'b n h d -> b n h (d j)', j=2)
-    cos = repeat(cos, 'b n h d -> b n h (d j)', j=2)
-
-    # Debug: Ensure that x and sin, cos shapes are aligned for broadcasting
     print(f"apply_rotary_pos_emb: x shape: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
-    assert x.shape == sin.shape == cos.shape, f"Shapes of x: {x.shape}, sin: {sin.shape}, cos: {cos.shape} do not match!"
 
-    # Apply sin and cos rotations
-    x = x * cos + rotate_every_two(x) * sin
+    # Split the input tensor into two parts and apply the rotary transformation
+    x1 = x[..., ::2]
+    x2 = x[..., 1::2]
 
-    return x
+    rotated_x1 = (x1 * cos) - (x2 * sin)
+    rotated_x2 = (x2 * cos) + (x1 * sin)
+
+    # Interleave the rotated tensors to form the output
+    x_out = jnp.empty_like(x)
+    x_out = x_out.at[..., ::2].set(rotated_x1)
+    x_out = x_out.at[..., 1::2].set(rotated_x2)
+    
+    return x_out
+
 
 
 
@@ -253,29 +258,22 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj = nn.Dense(self.dim * 4)
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
-    def self_attn(self, q, v, k, attn_bias):
-        if self.is_rotary:
-            sincos = fixed_pos_embedding(q.shape[0], self.pe_rotary_dims, self.n_heads)
-            q = apply_rotary_pos_emb(q, sincos)
-            k = apply_rotary_pos_emb(k, sincos)
-
-        # No need to reshape q and k to add batch dimensions; use them directly
+    def self_attn(self, q, v, k, attn_bias=None):
         print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
-
-        attention_logits = jnp.einsum("bthd,bThd->bhtT", q, k)
+    
+        # Corrected einsum string with three dimensions
+        attention_logits = jnp.einsum("thd,Thd->htT", q, k)
         print(f"self_attn: Attention logits shape: {attention_logits.shape}")  # Debug
-
+    
+        # Apply softmax to get attention weights
         attention_weights = jax.nn.softmax(attention_logits)
         print(f"self_attn: Attention weights shape: {attention_weights.shape}")  # Debug
-
-        # Adjust v as well to align with 3D processing
-        attention_vec = jnp.einsum("bhtT,bThd->bthd", attention_weights, v).reshape(q.shape[0], q.shape[1], -1)
-        print(f"self_attn: Attention vec shape: {attention_vec.shape}")  # Debug
-
-        return self.o(attention_vec)
-
-
-
+    
+        # Compute the final attention output
+        attention_output = jnp.einsum("htT,Thd->thd", attention_weights, v)
+        print(f"self_attn: Attention output shape: {attention_output.shape}")  # Debug
+    
+        return attention_output
 
 
 
@@ -288,14 +286,14 @@ class TransformerLayerShard(nn.Module):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        
         print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
-        q = self.q(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
-        v = self.v(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
-        k = self.k(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+        q = self.q(x).reshape((x.shape[0], self.n_heads, self.dim_per_head))  # (seq, heads, d_head)
+        v = self.v(x).reshape((x.shape[0], self.n_heads, self.dim_per_head))
+        k = self.k(x).reshape((x.shape[0], self.n_heads, self.dim_per_head))
         print(f"qvk_proj: Output q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")  # Debug: After qvk_proj
 
         return q, v, k
+
 
 
 
