@@ -292,6 +292,7 @@ class TransformerLayerShard(nn.Module):
         dense_proj = self.dense_proj(x)
         dense_proj = jax.nn.gelu(dense_proj)
         print(f"ff: Output shape: {x.shape}")  # Debug: Output from feedforward
+        log_memory("After Feedforward")
 
         return self.dense_proj_o(dense_proj)
 
@@ -369,6 +370,7 @@ class TransformerLayerShard(nn.Module):
 
         attn_out = self.self_attn(q, v, k, bias)
         dense_out = self.ff(x)
+    
 
         return attn_out + dense_out, {"k": k, "v": v, "tokens_decoded": given_length.astype(jnp.uint32)}
 
