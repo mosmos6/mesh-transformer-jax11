@@ -13,9 +13,19 @@ from mesh_transformer.mesh_context_manager import MeshContextManager  # Import f
 def log_memory(msg):
     from jax.lib import xla_bridge
     backend = xla_bridge.get_backend()
-    total_memory = backend.device_memory_limit()
-    used_memory = backend.memory_stats()["current"]
-    print(f"{msg} - Memory used: {used_memory / 1e6} MB, Total: {total_memory / 1e6} MB")
+    
+    # Use memory_stats instead of device_memory_limit
+    mem_stats = backend.memory_stats()
+
+    # Log available memory if available in the stats
+    used_memory = mem_stats.get("current", None)
+    total_memory = mem_stats.get("max", None)
+
+    if used_memory is not None and total_memory is not None:
+        print(f"{msg} - Memory used: {used_memory / 1e6} MB, Total: {total_memory / 1e6} MB")
+    else:
+        print(f"{msg} - Memory information not available.")
+
 
 
 class ReplicatedLayerNorm(nn.Module):
