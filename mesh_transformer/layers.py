@@ -11,20 +11,16 @@ from mesh_transformer.mesh_context_manager import MeshContextManager  # Import f
 
 
 def log_memory(msg):
-    from jax.lib import xla_bridge
-    backend = xla_bridge.get_backend()
-    
-    # Use memory_stats instead of device_memory_limit
-    mem_stats = backend.memory_stats()
+    from jax.lib import xla_client
+    # Get allocator statistics from the XLA client
+    stats = xla_client.get_memory_allocation_stats()
 
-    # Log available memory if available in the stats
-    used_memory = mem_stats.get("current", None)
-    total_memory = mem_stats.get("max", None)
-
-    if used_memory is not None and total_memory is not None:
-        print(f"{msg} - Memory used: {used_memory / 1e6} MB, Total: {total_memory / 1e6} MB")
+    # Log the message with available allocator stats
+    if stats:
+        print(f"{msg} - Allocator memory used: {stats['bytes_used'] / 1e6} MB")
     else:
-        print(f"{msg} - Memory information not available.")
+        print(f"{msg} - Allocator memory statistics not available.")
+
 
 
 
