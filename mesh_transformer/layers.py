@@ -12,7 +12,7 @@ from mesh_transformer.mesh_context_manager import MeshContextManager  # Import f
 
 def log_memory(msg):
     from jax.lib import xla_client
-    # Get allocator statistics from the XLA client
+    # Use the correct method to log memory allocation
     stats = xla_client.get_memory_allocation_stats()
 
     # Log the message with available allocator stats
@@ -20,6 +20,7 @@ def log_memory(msg):
         print(f"{msg} - Allocator memory used: {stats['bytes_used'] / 1e6} MB")
     else:
         print(f"{msg} - Allocator memory statistics not available.")
+
 
 
 
