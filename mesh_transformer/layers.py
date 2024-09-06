@@ -10,6 +10,14 @@ from jax.experimental.shard_map import shard_map
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
 
 
+def log_memory(msg):
+    from jax.lib import xla_bridge
+    backend = xla_bridge.get_backend()
+    total_memory = backend.device_memory_limit()
+    used_memory = backend.memory_stats()["current"]
+    print(f"{msg} - Memory used: {used_memory / 1e6} MB, Total: {total_memory / 1e6} MB")
+
+
 class ReplicatedLayerNorm(nn.Module):
     offset: bool = True
 
@@ -272,6 +280,8 @@ class TransformerLayerShard(nn.Module):
         # Compute the final attention output
         attention_output = jnp.einsum("htT,Thd->thd", attention_weights, v)
         print(f"self_attn: Attention output shape: {attention_output.shape}")  # Debug
+
+        log_memory("After Self Attention")
     
         return attention_output
 
@@ -304,6 +314,7 @@ class TransformerLayerShard(nn.Module):
         x = self.norm(x)
         q, v, k = self.qvk_proj(x)
         attn_out = self.self_attn(q, v, k, attn_bias)
+        log_memory("After Self Attention2")
         # Combine heads back into the original dimensionality
         attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.dim))  # seq_len, batch, d_model (4096)
         dense_out = self.ff(x)
