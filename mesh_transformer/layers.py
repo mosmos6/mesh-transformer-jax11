@@ -8,6 +8,7 @@ from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
 from jax.experimental.shard_map import shard_map
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
+from functools import partial
 from jax import profiler
 
 
@@ -262,7 +263,7 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj = nn.Dense(self.dim * 4)
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
-    @profiler.annotate_function(name="self_attn")
+    @partial(profiler.annotate_function, name="self_attn")
     def self_attn(self, q, v, k, attn_bias=None):
         print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
     
@@ -283,7 +284,7 @@ class TransformerLayerShard(nn.Module):
         return attention_output
 
 
-    @profiler.annotate_function(name="ff")
+    @partial(profiler.annotate_function, name="ff")
     def ff(self, x):
         print(f"ff: Input shape: {x.shape}")  # Debug: Input to feedforward
         dense_proj = self.dense_proj(x)
@@ -305,7 +306,7 @@ class TransformerLayerShard(nn.Module):
 
 
 
-    @profiler.annotate_function(name="transformer_layer_call")
+    @partial(profiler.annotate_function, name="__call__")
     def __call__(self, x, attn_bias):
         print(f"TransformerLayerShard: Input x shape: {x.shape}")  # Debug: Input to layer
         x = jax.lax.psum(x, axis_name='mp')
