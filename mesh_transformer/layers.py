@@ -262,8 +262,8 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj = nn.Dense(self.dim * 4)
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
+    @profiler.annotate_function(name="self_attn")
     def self_attn(self, q, v, k, attn_bias=None):
-        profiler.trace_function("self_attn")
         print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
     
         # Corrected einsum string with three dimensions
@@ -283,9 +283,8 @@ class TransformerLayerShard(nn.Module):
         return attention_output
 
 
-
+    @profiler.annotate_function(name="ff")
     def ff(self, x):
-        profiler.trace_function("ff")
         print(f"ff: Input shape: {x.shape}")  # Debug: Input to feedforward
         dense_proj = self.dense_proj(x)
         dense_proj = jax.nn.gelu(dense_proj)
@@ -306,9 +305,8 @@ class TransformerLayerShard(nn.Module):
 
 
 
-
+    @profiler.annotate_function(name="transformer_layer_call")
     def __call__(self, x, attn_bias):
-        profiler.trace_function("__call__")
         print(f"TransformerLayerShard: Input x shape: {x.shape}")  # Debug: Input to layer
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
