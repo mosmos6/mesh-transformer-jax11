@@ -10,18 +10,6 @@ from jax.experimental.shard_map import shard_map
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
 
 
-def log_memory(msg):
-    from jax.lib import xla_client
-    # Use the correct method to log memory allocation
-    stats = xla_client.get_memory_allocation_stats()
-
-    # Log the message with available allocator stats
-    if stats:
-        print(f"{msg} - Allocator memory used: {stats['bytes_used'] / 1e6} MB")
-    else:
-        print(f"{msg} - Allocator memory statistics not available.")
-
-
 
 
 
@@ -274,6 +262,7 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
     def self_attn(self, q, v, k, attn_bias=None):
+        profiler.trace_function("self_attn")
         print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
     
         # Corrected einsum string with three dimensions
@@ -288,18 +277,19 @@ class TransformerLayerShard(nn.Module):
         attention_output = jnp.einsum("htT,Thd->thd", attention_weights, v)
         print(f"self_attn: Attention output shape: {attention_output.shape}")  # Debug
 
-        log_memory("After Self Attention")
+    
     
         return attention_output
 
 
 
     def ff(self, x):
+        profiler.trace_function("ff")
         print(f"ff: Input shape: {x.shape}")  # Debug: Input to feedforward
         dense_proj = self.dense_proj(x)
         dense_proj = jax.nn.gelu(dense_proj)
         print(f"ff: Output shape: {x.shape}")  # Debug: Output from feedforward
-        log_memory("After Feedforward")
+        
 
         return self.dense_proj_o(dense_proj)
 
@@ -317,12 +307,12 @@ class TransformerLayerShard(nn.Module):
 
 
     def __call__(self, x, attn_bias):
+        profiler.trace_function("__call__")
         print(f"TransformerLayerShard: Input x shape: {x.shape}")  # Debug: Input to layer
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
         q, v, k = self.qvk_proj(x)
         attn_out = self.self_attn(q, v, k, attn_bias)
-        log_memory("After Self Attention2")
         # Combine heads back into the original dimensionality
         attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.dim))  # seq_len, batch, d_model (4096)
         dense_out = self.ff(x)
