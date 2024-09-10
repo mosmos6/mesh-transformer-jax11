@@ -8,6 +8,7 @@ from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
 from jax.experimental.shard_map import shard_map
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
+from jax import profiler
 
 
 
