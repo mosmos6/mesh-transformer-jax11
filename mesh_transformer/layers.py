@@ -126,14 +126,15 @@ def fixed_pos_embedding(seq_len, n_heads, dim_per_head):
     sin = jnp.sin(theta)
     cos = jnp.cos(theta)
     
-    # Double the last dimension to match dim_per_head
-    sin = jnp.repeat(sin[:, None, :], n_heads, axis=1)
-    cos = jnp.repeat(cos[:, None, :], n_heads, axis=1)
+    # Expand dimensions to match input tensors
+    sin = sin[:, None, None, :].repeat(n_heads, axis=1)  # [seq_len, n_heads, 1, dim_per_head // 2]
+    cos = cos[:, None, None, :].repeat(n_heads, axis=1)
 
-    sin = sin.repeat(2, axis=-1)  # Ensure sin has the correct shape
-    cos = cos.repeat(2, axis=-1)  # Ensure cos has the correct shape
+    sin = sin.repeat(2, axis=-1)  # [seq_len, n_heads, 1, dim_per_head]
+    cos = cos.repeat(2, axis=-1)  # [seq_len, n_heads, 1, dim_per_head]
     
     return sin, cos
+
 
 
     
@@ -195,6 +196,7 @@ class EmbeddingShard(nn.Module):
         out_dim = self.config["d_model"]
         shards = self.config["cores_per_replica"]
         dim_per_head = self.config["d_head"]
+        n_heads = self.config["n_heads"]
 
         assert in_dim % shards == 0
 
@@ -225,6 +227,11 @@ class EmbeddingShard(nn.Module):
             all_pos_embed = all_pos_embed.reshape(self.config["seq"], -1)
             proj_out += all_pos_embed
 
+        # Reshape to [batch_size, seq_len, n_heads, dim_per_head]
+        batch_size, seq_len = x.shape  # should be (1, 2048)
+        proj_out = proj_out.reshape((batch_size, seq_len, self.config["n_heads"], self.config["d_head"]))
+
+        
         # Handle rotary embeddings
         if self.config["pe"] == "rotary":
             seq_len = x.shape[0]
@@ -233,7 +240,7 @@ class EmbeddingShard(nn.Module):
             pe_rotary_dims = self.config.get("pe_rotary_dims", dim_per_head)
 
             # Ensure sincos embedding shapes match the expected dimension
-            sincos = fixed_pos_embedding(seq_len, pe_rotary_dims, dim_per_head)
+            sincos = fixed_pos_embedding(seq_len, self.config["n_heads"], pe_rotary_dims)
             proj_out = apply_rotary_pos_emb(proj_out, sincos)
 
         return proj_out
