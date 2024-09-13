@@ -126,11 +126,15 @@ def fixed_pos_embedding(seq_len, n_heads, dim_per_head):
     sin = jnp.sin(theta)
     cos = jnp.cos(theta)
     
-    # Expand dimensions to match input tensors
-    sin = sin[:, None, None, :].repeat(n_heads, axis=1)
-    cos = cos[:, None, None, :].repeat(n_heads, axis=1)
+    # Double the last dimension to match dim_per_head
+    sin = jnp.repeat(sin[:, None, :], n_heads, axis=1)
+    cos = jnp.repeat(cos[:, None, :], n_heads, axis=1)
+
+    sin = sin.repeat(2, axis=-1)  # Ensure sin has the correct shape
+    cos = cos.repeat(2, axis=-1)  # Ensure cos has the correct shape
     
     return sin, cos
+
 
     
 
