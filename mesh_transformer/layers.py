@@ -190,6 +190,7 @@ class EmbeddingShard(nn.Module):
         in_dim = self.config["n_vocab"]
         out_dim = self.config["d_model"]
         shards = self.config["cores_per_replica"]
+        dim_per_head = self.config["d_head"]
 
         assert in_dim % shards == 0
 
@@ -228,7 +229,7 @@ class EmbeddingShard(nn.Module):
             pe_rotary_dims = self.config.get("pe_rotary_dims", dim_per_head)
 
             # Ensure sincos embedding shapes match the expected dimension
-            sincos = fixed_pos_embedding(seq_len, pe_rotary_dims)
+            sincos = fixed_pos_embedding(seq_len, pe_rotary_dims, dim_per_head)
             proj_out = apply_rotary_pos_emb(proj_out, sincos)
 
         return proj_out
