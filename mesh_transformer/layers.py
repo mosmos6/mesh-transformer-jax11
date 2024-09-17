@@ -314,12 +314,16 @@ class TransformerLayerShard(nn.Module):
 
     def qvk_proj(self, x):
         print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
-        q = self.q(x).reshape((x.shape[0], self.n_heads, self.dim_per_head))  # (seq, heads, d_head)
-        v = self.v(x).reshape((x.shape[0], self.n_heads, self.dim_per_head))
-        k = self.k(x).reshape((x.shape[0], self.n_heads, self.dim_per_head))
+    
+        # Apply the projection for q, v, k and reshape accordingly
+        q = self.q(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))  # (batch, seq_len, heads, d_head)
+        v = self.v(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+        k = self.k(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+    
         print(f"qvk_proj: Output q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")  # Debug: After qvk_proj
-
+    
         return q, v, k
+
 
 
 
