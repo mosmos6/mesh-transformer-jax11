@@ -333,7 +333,7 @@ class TransformerLayerShard(nn.Module):
         attn_out = self.self_attn(q, v, k, attn_bias)
     
         # Combine heads back into the original dimensionality
-        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))  # Correct reshape
+        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.dim_per_head))  # Correct reshape
     
         # Apply feed-forward network
         dense_out = self.ff(x)
