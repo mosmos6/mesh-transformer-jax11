@@ -127,17 +127,18 @@ def fixed_pos_embedding(seq_len, n_heads, dim_per_head):
     cos = jnp.cos(theta)
     
     # Expand dimensions to match input tensors
-    sin = sin[:, None, None, :].repeat(n_heads, axis=1)  # Shape: (seq_len, n_heads, 1, dim_per_head // 2)
-    cos = cos[:, None, None, :].repeat(n_heads, axis=1)
+    sin = sin[:, None, :].repeat(n_heads, axis=1)  # Shape: (seq_len, n_heads, dim_per_head // 2)
+    cos = cos[:, None, :].repeat(n_heads, axis=1)
 
-    sin = sin.repeat(2, axis=-1)  # Shape: (seq_len, n_heads, 1, dim_per_head)
-    cos = cos.repeat(2, axis=-1)  # Shape: (seq_len, n_heads, 1, dim_per_head)
+    sin = sin.repeat(2, axis=-1)  # Shape: (seq_len, n_heads, dim_per_head)
+    cos = cos.repeat(2, axis=-1)  # Shape: (seq_len, n_heads, dim_per_head)
     
     # Adjust shapes to match input x (batch size, seq_len, n_heads, dim_per_head)
     sin = sin[:, None, :, :]  # Add batch size dimension, Shape: (seq_len, 1, n_heads, dim_per_head)
     cos = cos[:, None, :, :]  # Add batch size dimension, Shape: (seq_len, 1, n_heads, dim_per_head)
     
     return sin, cos
+
 
 
 
