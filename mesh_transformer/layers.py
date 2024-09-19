@@ -313,7 +313,6 @@ class TransformerLayerShard(nn.Module):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        
       print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
     
       # Apply q, v, k projections
@@ -323,7 +322,7 @@ class TransformerLayerShard(nn.Module):
     
       print(f"q shape before reshape: {q.shape}")  # Should be (batch_size, seq_len, n_heads * dim_per_head)
     
-      # Now reshape them
+      # Reshape to (batch_size, seq_len, n_heads, dim_per_head)
       q = q.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
       v = v.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
       k = k.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
@@ -331,6 +330,7 @@ class TransformerLayerShard(nn.Module):
       print(f"q shape after reshape: {q.shape}")  # Should be (batch_size, seq_len, n_heads, dim_per_head)
     
       return q, v, k
+
 
 
 
