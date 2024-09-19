@@ -313,16 +313,24 @@ class TransformerLayerShard(nn.Module):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
+ 　　　　   print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
     
-        # Apply the projection for q, v, k and reshape accordingly
-        q = self.q(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))  # (batch, seq_len, heads, d_head)
-        v = self.v(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
-        k = self.k(x).reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+　　　　    # Apply q, v, k projections
+　　　　    q = self.q(x)
+　　　　    v = self.v(x)
+  　　　　  k = self.k(x)
     
-        print(f"qvk_proj: Output q shape: {q.shape}, v shape: {v.shape}, k shape: {k.shape}")  # Debug: After qvk_proj
+　　　　    print(f"q shape before reshape: {q.shape}")  # Should be (batch_size, seq_len, n_heads * dim_per_head)
     
-        return q, v, k
+　　　　    # Now reshape them
+　　　　    q = q.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+ 　　　　   v = v.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+　　　　    k = k.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+    
+　　　　    print(f"q shape after reshape: {q.shape}")  # Should be (batch_size, seq_len, n_heads, dim_per_head)
+    
+　　　　    return q, v, k
+
 
 
 
