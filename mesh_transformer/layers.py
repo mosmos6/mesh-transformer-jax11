@@ -313,9 +313,8 @@ class TransformerLayerShard(nn.Module):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        
-　　    print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
-    
+        print(f"qvk_proj: Input x shape: {x.shape}")  # Debug: Before qvk_proj
+            
 　　    # Apply q, v, k projections
 　　    q = self.q(x)
 　　    v = self.v(x)
