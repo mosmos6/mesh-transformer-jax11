@@ -310,10 +310,9 @@ class TransformerLayerShard(nn.Module):
     
       print(f"q shape before reshape: {q.shape}")  # Should be (batch_size, seq_len, n_heads * dim_per_head)
     
-      # Reshape to (batch_size, seq_len, n_heads, dim_per_head)
-      q = q.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
-      v = v.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
-      k = k.reshape((x.shape[0], x.shape[1], self.n_heads, self.dim_per_head))
+      q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+      v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+      k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
     
       print(f"q shape after reshape: {q.shape}")  # Should be (batch_size, seq_len, n_heads, dim_per_head)
     
