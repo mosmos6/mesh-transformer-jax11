@@ -183,11 +183,9 @@ def apply_rotary_pos_emb(x, sincos):
     rotated_x1 = (x1 * cos) - (x2 * sin)
     rotated_x2 = (x2 * cos) + (x1 * sin)
 
-    # Interleave the rotated tensors to form the output
-    x_out = jnp.empty_like(x)
-    x_out = x_out.at[..., ::2].set(rotated_x1)
-    x_out = x_out.at[..., 1::2].set(rotated_x2)
-    
+    # Efficiently combine back the results
+    x_out = jnp.concatenate([rotated_x1[..., None], rotated_x2[..., None]], axis=-1).reshape(x.shape)
+
     return x_out
 
 
@@ -274,7 +272,7 @@ class TransformerLayerShard(nn.Module):
         print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
     
         # Corrected einsum string with three dimensions
-        attention_logits = jnp.einsum("thd,Thd->htT", q, k)
+        attention_logits = jnp.einsum("thd,Thd->htT", q, k, optimize="optimal")
         print(f"self_attn: Attention logits shape: {attention_logits.shape}")  # Debug
     
         # Apply softmax to get attention weights
@@ -333,7 +331,12 @@ class TransformerLayerShard(nn.Module):
         dense_out = self.ff(x)
     
         # Add attention output and dense output
-        return jax.lax.psum(attn_out + dense_out, axis_name='mp')
+        result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
+
+        # Manually trigger garbage collection to avoid memory leaks
+        gc.collect()
+
+        return result
 
     def decode_once(self, decode_state, x, attn_bias):
         x = jax.lax.psum(x, axis_name='mp')
