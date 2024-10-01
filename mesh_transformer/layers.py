@@ -10,6 +10,8 @@ from jax.experimental.shard_map import shard_map
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
 from functools import partial
 from jax import profiler
+import gc
+from jax import checkpoint
 
 
 
@@ -241,6 +243,7 @@ class TransformerLayerShard(nn.Module):
     config: dict
     mesh_manager: MeshContextManager
     init_scale: float = 1.0
+    layer_index: int = 0  # Track the current layer index
 
     def setup(self):
         
@@ -317,25 +320,25 @@ class TransformerLayerShard(nn.Module):
 
 
     @partial(profiler.annotate_function, name="__call__")
-    def __call__(self, x, attn_bias):
-        print(f"TransformerLayerShard: Input x shape: {x.shape}")  # Debug: Input to layer
+    def layer_forward(self, x, attn_bias):
+        print(f"TransformerLayerShard: Input x shape: {x.shape}")
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
         q, v, k = self.qvk_proj(x)
         attn_out = self.self_attn(q, v, k, attn_bias)
-    
-        # Combine heads back into the original dimensionality
-        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))  # Correct reshape
-    
-        # Apply feed-forward network
+        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
         dense_out = self.ff(x)
-    
-        # Add attention output and dense output
         result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
-
-        # Manually trigger garbage collection to avoid memory leaks
         gc.collect()
+        return result
 
+    def __call__(self, x, attn_bias):
+        if self.layer_index >= 8:  # Enable gradient checkpointing for layers 8 and higher
+            result = checkpoint(self.layer_forward, prevent_cse=False)(x, attn_bias)
+        else:
+            result = self.layer_forward(x, attn_bias)
+
+        self.layer_index += 1  # Increment the layer index
         return result
 
     def decode_once(self, decode_state, x, attn_bias):
