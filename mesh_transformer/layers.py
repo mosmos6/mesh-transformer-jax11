@@ -245,8 +245,7 @@ class TransformerLayerShard(nn.Module):
     init_scale: float = 1.0
 
     def setup(self):
-        # Initialize the layer index in the setup method
-        self.layer_index = 0  # Start with layer 0
+        
         self.n_heads = self.config["n_heads"]  # Store n_heads as an instance attribute
         self.dim = self.config["d_model"]
         self.shards = self.config["cores_per_replica"]
