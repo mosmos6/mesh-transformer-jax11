@@ -243,10 +243,10 @@ class TransformerLayerShard(nn.Module):
     config: dict
     mesh_manager: MeshContextManager
     init_scale: float = 1.0
-    layer_index: int = 0  # Track the current layer index
 
     def setup(self):
-        
+        # Initialize the layer index in the setup method
+        self.layer_index = 0  # Start with layer 0
         self.n_heads = self.config["n_heads"]  # Store n_heads as an instance attribute
         self.dim = self.config["d_model"]
         self.shards = self.config["cores_per_replica"]
@@ -320,7 +320,7 @@ class TransformerLayerShard(nn.Module):
 
 
     @partial(profiler.annotate_function, name="__call__")
-    def layer_forward(self, x, attn_bias):
+    def __call__(self, x, attn_bias, layer_index):
         print(f"TransformerLayerShard: Input x shape: {x.shape}")
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
@@ -329,17 +329,12 @@ class TransformerLayerShard(nn.Module):
         attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
         dense_out = self.ff(x)
         result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
+
+        # Return the result without modifying the layer index directly
         gc.collect()
         return result
 
-    def __call__(self, x, attn_bias):
-        if self.layer_index >= 8:  # Enable gradient checkpointing for layers 8 and higher
-            result = checkpoint(self.layer_forward, prevent_cse=False)(x, attn_bias)
-        else:
-            result = self.layer_forward(x, attn_bias)
-
-        self.layer_index += 1  # Increment the layer index
-        return result
+    
 
     def decode_once(self, decode_state, x, attn_bias):
         x = jax.lax.psum(x, axis_name='mp')
