@@ -320,17 +320,27 @@ class TransformerLayerShard(nn.Module):
 
     @partial(profiler.annotate_function, name="__call__")
     def __call__(self, x, attn_bias, layer_index):
+        
         print(f"TransformerLayerShard: Input x shape: {x.shape}")
-        x = jax.lax.psum(x, axis_name='mp')
-        x = self.norm(x)
-        q, v, k = self.qvk_proj(x)
-        attn_out = self.self_attn(q, v, k, attn_bias)
-        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
-        dense_out = self.ff(x)
-        result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
+    
+        # Define the core computation as a separate function
+        def layer_forward(x, attn_bias):
+            
+            x = jax.lax.psum(x, axis_name='mp')
+            x = self.norm(x)
+            q, v, k = self.qvk_proj(x)
+            attn_out = self.self_attn(q, v, k, attn_bias)
+            attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
+            dense_out = self.ff(x)
+            result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
+            return result
 
-        # Return the result without modifying the layer index directly
+        # Use jax.checkpoint to wrap the forward computation
+        result = jax.checkpoint(layer_forward)(x, attn_bias)
+
+        # Manually trigger garbage collection
         gc.collect()
+
         return result
 
     
