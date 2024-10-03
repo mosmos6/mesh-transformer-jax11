@@ -49,10 +49,11 @@ class CausalTransformerShard(nn.Module):
         else:
             attn_bias = mask  # If rpe is not used, simply set attn_bias to the mask or 0
 
-        for i, layer in enumerate(self.transformer_layers):
-            print(f"Shape of x before layer {i}: {x.shape}")  # Debug: Check x shape before each layer
-            x = layer(x, attn_bias)
-            print(f"Shape of x after layer {i}: {x.shape}")  # Debug: Check x shape after each layer
+        # Initialize layer index and pass it to each layer
+    for layer_index, layer in enumerate(self.transformer_layers):
+        print(f"Shape of x before layer {layer_index}: {x.shape}")  # Debug: Check x shape before each layer
+        x = layer(x, attn_bias, layer_index)  # Pass the layer_index here
+        print(f"Shape of x after layer {layer_index}: {x.shape}")  # Debug: Check x shape after each layer
 
         return self.proj(x)
 
