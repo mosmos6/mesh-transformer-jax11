@@ -67,8 +67,9 @@ class CausalTransformerShard(nn.Module):
 
         x = self.embed(context)
 
-        for l in self.transformer_layers:
-            x = x + l(x, attn_bias)
+        # Pass the layer index in eval as well
+        for layer_index, layer in enumerate(self.transformer_layers):
+            x = x + layer(x, attn_bias, layer_index)  # Pass layer_index here
 
         shard_start_index = compute_shard_start_index(self.proj.dim_per_shard)
         return self.proj.loss(x, target, shard_start_index, z_loss)
