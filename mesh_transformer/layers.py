@@ -11,7 +11,7 @@ from mesh_transformer.mesh_context_manager import MeshContextManager  # Import f
 from functools import partial
 from jax import profiler
 import gc
-from jax import checkpoint
+from flax.linen import remat
 
 
 
@@ -335,8 +335,8 @@ class TransformerLayerShard(nn.Module):
             result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
             return result
 
-        # Use jax.checkpoint to wrap the forward computation
-        result = jax.checkpoint(layer_forward)(x, attn_bias)
+        # Use flax.linen.remat to apply checkpointing in a way compatible with Flax models
+        result = remat(layer_forward)(x, attn_bias)
 
         # Manually trigger garbage collection
         gc.collect()
