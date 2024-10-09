@@ -25,14 +25,6 @@ class CausalTransformerShard(nn.Module):
         self.d_model = self.config["d_model"]
         self.n_heads = self.config["n_heads"]
         self.heads_per_shard = self.n_heads // self.config["cores_per_replica"]
-
-        rng = jax.random.PRNGKey(0)
-        sample_input = jnp.zeros((self.config["seq"], self.config["per_replica_batch"]), dtype=jnp.uint32)
-        print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug
-        self.state, _ = self.init_shmap(rng, sample_input)
-        assert hasattr(self, 'state'), "State not initialized properly"
-        print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
-
         self.transformer_layers = [TransformerLayerShard(config=self.config, mesh_manager=self.mesh_manager) for _ in range(self.layers)]
         #self.embed = nn.Embed(self.config["n_vocab"], self.d_model)
         self.embed = EmbeddingShard(config=self.config)
@@ -146,10 +138,6 @@ class CausalTransformer:
 
         mesh_manager = MeshContextManager(dp, mp)
 
-        def init_fn(rng, x):
-            model = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
-            return model.init(rng, x)  # This should initialize the model with x
-
         self.init_shmap = shard_map(
             init_fn,
             in_specs=(P(), P()),
@@ -158,14 +146,18 @@ class CausalTransformer:
             check_rep=False
         )
 
-        rng = jax.random.PRNGKey(0)
-        sample_input = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
+        def init_fn(rng, x):
 
-        print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug: Before shmap
-        self.state, _ = self.init_shmap(rng, sample_input)
-        assert hasattr(self, 'state'), "State not initialized properly"  # Ensure state is initialized
-        print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
-        print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
+            rng = jax.random.PRNGKey(0)
+            sample_input = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
+            print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug: Before shmap
+            state, _ = self.init_shmap(rng, sample_input)
+            assert state is not None, "State not initialized properly"
+            print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
+            print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
+            
+            model = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
+            return model.init(rng, x)  # This should initialize the model with x
         
         def train_fn(state, ctx, tgt):
             def train_loss(x, y):
