@@ -155,6 +155,8 @@ class CausalTransformer:
 
         print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug: Before shmap
         self.state, _ = self.init_shmap(rng, sample_input)
+        assert hasattr(self, 'state'), "State not initialized properly"  # Ensure state is initialized
+        print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
         print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
         
         def train_fn(state, ctx, tgt):
