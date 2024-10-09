@@ -335,8 +335,12 @@ class TransformerLayerShard(nn.Module):
             result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
             return result
 
-        # Use flax.linen.remat to apply checkpointing in a way compatible with Flax models
-        result = remat(layer_forward)(x, attn_bias)
+        # Ensure proper state handling before remat
+        assert hasattr(self, '_state'), "State not initialized properly"
+
+        # Apply remat with explicit state passing
+        result = remat(layer_forward)(x, attn_bias, self._state)  # Pass state explicitly
+
 
         # Manually trigger garbage collection
         gc.collect()
