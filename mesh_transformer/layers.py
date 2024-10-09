@@ -340,7 +340,7 @@ class TransformerLayerShard(nn.Module):
             return layer_forward(x, attn_bias, state)
 
         # Apply remat with state explicitly passed
-        result = remat(layer_forward_with_state)(x, attn_bias, self.state)  # Pass state explicitly
+        result = remat(layer_forward_with_state)(x, attn_bias, state)  # Pass state explicitly
 
 
 
