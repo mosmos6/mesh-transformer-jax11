@@ -25,6 +25,14 @@ class CausalTransformerShard(nn.Module):
         self.d_model = self.config["d_model"]
         self.n_heads = self.config["n_heads"]
         self.heads_per_shard = self.n_heads // self.config["cores_per_replica"]
+
+        rng = jax.random.PRNGKey(0)
+        sample_input = jnp.zeros((self.config["seq"], self.config["per_replica_batch"]), dtype=jnp.uint32)
+        print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug
+        self.state, _ = self.init_shmap(rng, sample_input)
+        assert hasattr(self, 'state'), "State not initialized properly"
+        print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
+
         self.transformer_layers = [TransformerLayerShard(config=self.config, mesh_manager=self.mesh_manager) for _ in range(self.layers)]
         #self.embed = nn.Embed(self.config["n_vocab"], self.d_model)
         self.embed = EmbeddingShard(config=self.config)
