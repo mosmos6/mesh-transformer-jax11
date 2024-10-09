@@ -335,11 +335,13 @@ class TransformerLayerShard(nn.Module):
             result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
             return result
 
-        # Ensure proper state handling before remat
-        assert hasattr(self, '_state'), "State not initialized properly"
+        # Update layer_forward to explicitly take state as an argument
+        def layer_forward_with_state(x, attn_bias, state):
+            return layer_forward(x, attn_bias, state)
 
-        # Apply remat with explicit state passing
-        result = remat(layer_forward)(x, attn_bias, self._state)  # Pass state explicitly
+        # Apply remat with state explicitly passed
+        result = remat(layer_forward_with_state)(x, attn_bias, self.state)  # Pass state explicitly
+
 
 
         # Manually trigger garbage collection
