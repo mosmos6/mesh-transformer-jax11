@@ -144,7 +144,6 @@ class CausalTransformer:
 
 
         def init_fn(rng, x):
-
             rng = jax.random.PRNGKey(0)
             sample_input = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
             print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug: Before shmap
@@ -164,6 +163,10 @@ class CausalTransformer:
             mesh=mesh_manager.get_mesh(),
             check_rep=False
         )
+
+        rng = jax.random.PRNGKey(0)
+        x = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
+        self.init_shmap(rng, x)  # Trigger the initialization process
         
         def train_fn(state, ctx, tgt):
             def train_loss(x, y):
