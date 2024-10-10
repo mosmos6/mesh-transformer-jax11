@@ -136,7 +136,7 @@ class CausalTransformer:
     def __init__(self, config):
         self.config = config
         optimizer = config["optimizer"]
-        self.state = state
+        self.state = self.init_state
 
         dp = jax.device_count() // config["cores_per_replica"]
         mp = config["cores_per_replica"]
