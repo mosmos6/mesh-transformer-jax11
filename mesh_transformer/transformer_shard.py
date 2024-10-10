@@ -136,7 +136,6 @@ class CausalTransformer:
     def __init__(self, config):
         self.config = config
         optimizer = config["optimizer"]
-        self.state = self.init_state
 
         dp = jax.device_count() // config["cores_per_replica"]
         mp = config["cores_per_replica"]
@@ -155,6 +154,7 @@ class CausalTransformer:
             print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
             
             model = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
+            self.state = state
             return model.init(rng, x)  # This should initialize the model with x
 
         self.init_shmap = shard_map(
