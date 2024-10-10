@@ -142,13 +142,6 @@ class CausalTransformer:
 
         mesh_manager = MeshContextManager(dp, mp)
 
-        self.init_shmap = shard_map(
-            init_fn,
-            in_specs=(P(), P()),
-            out_specs=(P(), P()),
-            mesh=mesh_manager.get_mesh(),
-            check_rep=False
-        )
 
         def init_fn(rng, x):
 
@@ -162,6 +155,14 @@ class CausalTransformer:
             
             model = CausalTransformerShard(config=config, mesh_manager=mesh_manager)
             return model.init(rng, x)  # This should initialize the model with x
+
+        self.init_shmap = shard_map(
+            init_fn,
+            in_specs=(P(), P()),
+            out_specs=(P(), P()),
+            mesh=mesh_manager.get_mesh(),
+            check_rep=False
+        )
         
         def train_fn(state, ctx, tgt):
             def train_loss(x, y):
