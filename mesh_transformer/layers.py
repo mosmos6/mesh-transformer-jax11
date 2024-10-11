@@ -245,8 +245,7 @@ class TransformerLayerShard(nn.Module):
     init_scale: float = 1.0
 
     def setup(self):
-        
-        self.n_heads = self.config["n_heads"]  # Store n_heads as an instance attribute
+        self.n_heads = self.config["n_heads"]
         self.dim = self.config["d_model"]
         self.shards = self.config["cores_per_replica"]
         self.norm = getnorm(self.config["norm"])
@@ -255,17 +254,15 @@ class TransformerLayerShard(nn.Module):
         assert self.dim % self.n_heads == 0
         assert self.n_heads % self.shards == 0
 
-        self.dim_per_head = self.dim // self.n_heads  # Calculate and store dim_per_head as an instance attribute
+        self.dim_per_head = self.dim // self.n_heads
         self.heads_per_shard = self.n_heads // self.shards
         self.dim_per_shard = self.dim // self.shards
         self.pe_rotary_dims = self.config.get("pe_rotary_dims", self.dim_per_head)
 
-        self.q = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)  # Use instance attributes now
+        self.q = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)
         self.v = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)
         self.k = nn.Dense(self.n_heads * self.dim_per_head, use_bias=False)
-        
         self.o = nn.Dense(self.dim, use_bias=False, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
-
         self.dense_proj = nn.Dense(self.dim * 4)
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
@@ -320,12 +317,10 @@ class TransformerLayerShard(nn.Module):
 
     @partial(profiler.annotate_function, name="__call__")
     def __call__(self, x, attn_bias, layer_index):
-        
         print(f"TransformerLayerShard: Input x shape: {x.shape}")
-    
-        # Define the core computation as a separate function
+
+        # Core computation as a separate function
         def layer_forward(x, attn_bias):
-            
             x = jax.lax.psum(x, axis_name='mp')
             x = self.norm(x)
             q, v, k = self.qvk_proj(x)
@@ -335,14 +330,8 @@ class TransformerLayerShard(nn.Module):
             result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
             return result
 
-        # Update layer_forward to explicitly take state as an argument
-        def layer_forward_with_state(x, attn_bias, state):
-            return layer_forward(x, attn_bias, state)
-
-        # Apply remat with state explicitly passed
-        result = remat(layer_forward_with_state)(x, attn_bias, state)  # Pass state explicitly
-
-
+        # Apply remat to the layer_forward function
+        result = remat(layer_forward)(x, attn_bias)
 
         # Manually trigger garbage collection
         gc.collect()
