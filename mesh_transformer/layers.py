@@ -266,7 +266,9 @@ class TransformerLayerShard(nn.Module):
         self.dense_proj = nn.Dense(self.dim * 4)
         self.dense_proj_o = nn.Dense(self.dim, kernel_init=nn.initializers.truncated_normal(stddev=self.init_scale / np.sqrt(self.dim)))
 
-    @partial(profiler.annotate_function, name="self_attn")
+
+    # Using @nn.remat decorator to wrap self-attention and feedforward layers for memory optimization
+    @nn.remat
     def self_attn(self, q, v, k, attn_bias=None):
         print(f"self_attn: Adjusted q shape: {q.shape}, k shape: {k.shape}")  # Debug
     
@@ -287,7 +289,7 @@ class TransformerLayerShard(nn.Module):
         return attention_output
 
 
-    @partial(profiler.annotate_function, name="ff")
+    @nn.remat
     def ff(self, x):
         print(f"ff: Input shape: {x.shape}")  # Debug: Input to feedforward
         dense_proj = self.dense_proj(x)
@@ -315,27 +317,21 @@ class TransformerLayerShard(nn.Module):
 
 
 
-    @partial(profiler.annotate_function, name="__call__")
+    @nn.compact
     def __call__(self, x, attn_bias, layer_index):
-        print(f"TransformerLayerShard: Input x shape: {x.shape}")
+        # Apply psum for data parallelism
+        x = jax.lax.psum(x, axis_name='mp')
 
-        # Core computation as a separate function
-        def layer_forward(x, attn_bias):
-            x = jax.lax.psum(x, axis_name='mp')
-            x = self.norm(x)
-            q, v, k = self.qvk_proj(x)
-            attn_out = self.self_attn(q, v, k, attn_bias)
-            attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
-            dense_out = self.ff(x)
-            result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
-            return result
+        # Apply normalization and projections
+        x = self.norm(x)
+        q, v, k = self.q(x), self.v(x), self.k(x)
 
-        # Apply remat to the layer_forward function
-        result = remat(layer_forward)(x, attn_bias)
+        # Memory optimization with remat in self-attn and ff
+        attn_out = self.self_attn(q, v, k, attn_bias)
+        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
+        dense_out = self.ff(x)
 
-        # Manually trigger garbage collection
-        gc.collect()
-
+        result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
         return result
 
     
