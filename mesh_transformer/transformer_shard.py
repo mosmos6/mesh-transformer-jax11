@@ -27,7 +27,7 @@ class CausalTransformerShard(nn.Module):
         self.n_heads = self.config["n_heads"]
         self.heads_per_shard = self.n_heads // self.config["cores_per_replica"]
         self.transformer_layers = [
-            TransformerLayerShard(config=self.config, mesh_manager=self.mesh_manager, state=self.init_state) 
+            TransformerLayerShard(config=self.config, mesh_manager=self.mesh_manager) 
             for _ in range(self.layers)
         ]
         #self.embed = nn.Embed(self.config["n_vocab"], self.d_model)
@@ -59,7 +59,7 @@ class CausalTransformerShard(nn.Module):
         # Initialize layer index and pass it to each layer
         for layer_index, layer in enumerate(self.transformer_layers):
             print(f"Shape of x before layer {layer_index}: {x.shape}")  # Debug: Check x shape before each layer
-            x = layer(x, attn_bias, layer_index)  # Pass the layer_index here
+            x = layer(x, attn_bias, layer_index, self.state)  # Pass the layer_index here
             print(f"Shape of x after layer {layer_index}: {x.shape}")  # Debug: Check x shape after each layer
 
         return self.proj(x)
