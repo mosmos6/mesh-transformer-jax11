@@ -318,7 +318,7 @@ class TransformerLayerShard(nn.Module):
 
 
     @nn.compact
-    def __call__(self, x, attn_bias, layer_index):
+    def __call__(self, x, attn_bias, layer_index, state):
         # Apply psum for data parallelism
         x = jax.lax.psum(x, axis_name='mp')
 
