@@ -30,8 +30,8 @@ class ReplicatedLayerNorm(nn.Module):
         offset = self.param("offset", nn.initializers.zeros, param_shape)
 
         # Instead of gathering, ensure the params are sharded appropriately across mp
-        scale = jax.lax.psum(scale, "mp")  # Sum over shards to combine partial parameters
-        offset = jax.lax.psum(offset, "mp")
+        scale = jax.lax.psum(scale, "dp")  # Sum over shards to combine partial parameters
+        offset = jax.lax.psum(offset, "dp")
 
         # Broadcast the result, but avoid full replication across mp
         scale = jnp.broadcast_to(scale, inputs.shape)
@@ -56,12 +56,12 @@ class RMSNorm(nn.Module):
         normed = x / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-5)
 
         scale = self.param('scale', nn.initializers.constant(x.shape[-1] ** 0.5), param_shape)
-        scale = jax.lax.pmean(scale, "mp")
+        scale = jax.lax.pmean(scale, "dp")
         normed = normed * scale
 
         if self.offset:
             offset = self.param('offset', nn.initializers.zeros, param_shape)
-            offset = jax.lax.pmean(offset, "mp")
+            offset = jax.lax.pmean(offset, "dp")
             normed = normed + offset
 
         return normed
@@ -406,10 +406,10 @@ class ProjectionShard(nn.Module):
         logits = self.forward(x)
         logits = jnp.swapaxes(logits, 0, 1)
 
-        shard_start_index = jax.lax.psum(shard_start_index, "mp")
+        shard_start_index = jax.lax.psum(shard_start_index, "dp")
         predicted_logits = jnp.take_along_axis(logits, target[:, :, None] + shard_start_index, axis=-1)
         exp_logits = jnp.exp(logits - logits.max(axis=-1, keepdims=True))
-        sum_exp_logits = jax.lax.psum(exp_logits, axis_name="mp")
+        sum_exp_logits = jax.lax.psum(exp_logits, axis_name="dp")
 
         softmax_logits = predicted_logits - jnp.log(sum_exp_logits)
 
