@@ -162,8 +162,9 @@ class CausalTransformer:
             init_fn,
             in_specs=(P(), P()),
             out_specs=(P(), P()),
-            mesh=mesh_manager.get_mesh()
-        ) #check_rep=False
+            mesh=mesh_manager.get_mesh(),
+            check_rep=False
+        ) 
 
         rng = jax.random.PRNGKey(0)
         x = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
@@ -208,8 +209,9 @@ class CausalTransformer:
             train_fn,
             in_specs=(P(), P(), P()),
             out_specs=(P(), P()),
-            mesh=mesh_manager.get_mesh()
-        ) #check_rep=False
+            mesh=mesh_manager.get_mesh(),
+            check_rep=False
+        ) 
 
     def train(self, sample):
         obs = jnp.transpose(sample["obs"], (1, 0))
