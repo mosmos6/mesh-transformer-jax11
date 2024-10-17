@@ -27,11 +27,13 @@ class ReplicatedLayerNorm(nn.Module):
 
         param_shape = inputs.shape[-1:]
         scale = self.param("scale", nn.initializers.ones, param_shape)
-        scale = jax.lax.all_gather(scale, "mp")[0]
-
         offset = self.param("offset", nn.initializers.zeros, param_shape)
-        offset = jax.lax.all_gather(offset, "mp")[0]
 
+        # Instead of gathering, ensure the params are sharded appropriately across mp
+        scale = jax.lax.psum(scale, "mp")  # Sum over shards to combine partial parameters
+        offset = jax.lax.psum(offset, "mp")
+
+        # Broadcast the result, but avoid full replication across mp
         scale = jnp.broadcast_to(scale, inputs.shape)
         offset = jnp.broadcast_to(offset, inputs.shape)
         mean = jnp.broadcast_to(mean, inputs.shape)
@@ -41,6 +43,7 @@ class ReplicatedLayerNorm(nn.Module):
             return inv * (inputs - mean) + offset
         else:
             return inv * (inputs - mean)
+
 
 
 class RMSNorm(nn.Module):
