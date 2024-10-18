@@ -160,8 +160,8 @@ class CausalTransformer:
 
         self.init_shmap = shard_map(
             init_fn,
-            in_specs=(P('mp'), P()),
-            out_specs=(P('mp'), P()),
+            in_specs=(None, P('mp')),  # Don't shard rng, shard input over mp
+            out_specs=(P('mp'), P('mp')),  # Shard outputs over mp
             mesh=mesh_manager.get_mesh(),
             check_rep=False
         ) 
