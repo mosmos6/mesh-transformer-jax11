@@ -137,7 +137,9 @@ class CausalTransformerShard(nn.Module):
 
 class CausalTransformer:
     def __init__(self, config):
-        self.config = config
+        # Convert non-hashable values in config to hashable types
+        self.config = {key: tuple(value) if isinstance(value, (list, np.ndarray, jax.Array)) else value for key, value in config.items()}
+        
         optimizer = config["optimizer"]
 
         dp = jax.device_count() // config["cores_per_replica"]
