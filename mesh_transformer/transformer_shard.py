@@ -165,7 +165,8 @@ class CausalTransformer:
             in_specs=(None, P('mp')),  # Don't shard rng, shard input over mp
             out_specs=(P('mp'), P('mp')),  # Shard outputs over mp
             mesh=mesh_manager.get_mesh(),
-            check_rep=False
+            check_rep=False,
+            static_argnums=()  # Mark all arguments as non-static by default
         ) 
 
         rng = jax.random.PRNGKey(0)
