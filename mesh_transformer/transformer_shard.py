@@ -140,26 +140,25 @@ class CausalTransformer:
         # Convert non-hashable values in config to hashable types
         self.config = {key: tuple(value) if isinstance(value, (list, np.ndarray, jax.Array)) else value for key, value in config.items()}
         
-        optimizer = config["optimizer"]
-
-        dp = jax.device_count() // config["cores_per_replica"]
-        mp = config["cores_per_replica"]
+        optimizer = self.config["optimizer"]
+        dp = jax.device_count() // self.config["cores_per_replica"]
+        mp = self.config["cores_per_replica"]
 
         mesh_manager = MeshContextManager(dp, mp)
 
-
         def init_fn(rng, x):
-            rng = jax.random.PRNGKey(0)
-            sample_input = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
+            # Ensure rng is treated as dynamic and not static
+            sample_input = jnp.zeros((self.config["seq"], self.config["per_replica_batch"]), dtype=jnp.uint32)
             print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug: Before shmap
-            state = jax.random.normal(rng, (config["layers"], config["d_model"], config["n_heads"]))
+            state = jax.random.normal(rng, (self.config["layers"], self.config["d_model"], self.config["n_heads"]))
             self.state = state  # Set state manually
             print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
             print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
             
-            model = CausalTransformerShard(config=config, mesh_manager=mesh_manager, init_state=self.state)
-            return model.init(rng, x)  # This should initialize the model with x
+            model = CausalTransformerShard(config=self.config, mesh_manager=mesh_manager, init_state=self.state)
+            return model.init(rng, x)
 
+        # Correctly shard the inputs and outputs using in_specs and out_specs
         self.init_shmap = shard_map(
             init_fn,
             in_specs=(None, P('mp')),  # Don't shard rng, shard input over mp
@@ -167,10 +166,11 @@ class CausalTransformer:
             mesh=mesh_manager.get_mesh(),
             check_rep=False,
             static_argnums=()  # Mark all arguments as non-static by default
-        ) 
+        )
 
+        # Initialize shmap with the model input
         rng = jax.random.PRNGKey(0)
-        x = jnp.zeros((config["seq"], config["per_replica_batch"]), dtype=jnp.uint32)
+        x = jnp.zeros((self.config["seq"], self.config["per_replica_batch"]), dtype=jnp.uint32)
         self.init_shmap(rng, x)  # Trigger the initialization process
         
         def train_fn(state, ctx, tgt):
