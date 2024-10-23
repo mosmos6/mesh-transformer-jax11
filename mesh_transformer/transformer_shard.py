@@ -158,18 +158,20 @@ class CausalTransformer:
             model = CausalTransformerShard(config=self.config, mesh_manager=mesh_manager, init_state=self.state)
             return model.init(rng, x)
 
-        # Correctly shard the inputs and outputs using in_specs and out_specs
-        self.init_shmap = shard_map(
-            init_fn,
+        # Apply vmap to batch over the function, then pass to shard_map
+        vmapped_fn = vmap(init_fn, in_axes=(0, 0))  # Vmap over the first axis of rng and x
+
+        # Use shard_map with jax.jit and correctly set the in_specs and out_specs
+        self.init_shmap = jax.jit(shard_map(
+            vmapped_fn,  # Use the vmapped version of the function
             in_specs=(None, P('mp')),  # Don't shard rng, shard input over mp
             out_specs=(P('mp'), P('mp')),  # Shard outputs over mp
             mesh=mesh_manager.get_mesh(),
-            check_rep=False,
-            static_argnums=()  # Mark all arguments as non-static by default
-        )
+            static_argnums=()
+        ))
 
-        # Initialize shmap with the model input
-        rng = jax.random.PRNGKey(0)
+        # Initialize state with shmap
+        rng = jax.random.split(jax.random.PRNGKey(0), mp)  # Split RNG key for each shard
         x = jnp.zeros((self.config["seq"], self.config["per_replica_batch"]), dtype=jnp.uint32)
         self.init_shmap(rng, x)  # Trigger the initialization process
         
