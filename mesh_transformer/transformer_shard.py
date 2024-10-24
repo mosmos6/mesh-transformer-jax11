@@ -166,8 +166,7 @@ class CausalTransformer:
             vmapped_fn,  # Use the vmapped version of the function
             in_specs=(None, P('mp')),  # Don't shard rng, shard input over mp
             out_specs=(P('mp'), P('mp')),  # Shard outputs over mp
-            mesh=mesh_manager.get_mesh(),
-            static_argnums=()
+            mesh=mesh_manager.get_mesh()
         ))
 
         # Initialize state with shmap
