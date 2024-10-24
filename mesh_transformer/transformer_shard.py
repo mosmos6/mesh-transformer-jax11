@@ -159,7 +159,7 @@ class CausalTransformer:
             return model.init(rng, x)
 
         # Apply vmap to batch over the function, then pass to shard_map
-        vmapped_fn = vmap(init_fn, in_axes=(0, 0))  # Vmap over the first axis of rng and x
+        vmapped_fn = jax.vmap(init_fn, in_axes=(0, 0))  # Vmap over the first axis of rng and x
 
         # Use shard_map with jax.jit and correctly set the in_specs and out_specs
         self.init_shmap = jax.jit(shard_map(
