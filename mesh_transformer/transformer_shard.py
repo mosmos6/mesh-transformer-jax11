@@ -148,8 +148,7 @@ class CausalTransformer:
 
         def init_fn(rng, x):
             # Ensure rng is treated as dynamic and not static
-            sample_input = jnp.zeros((self.config["seq"], self.config["per_replica_batch"]), dtype=jnp.uint32)
-            print(f"Shape of sample_input before shmap: {sample_input.shape}")  # Debug: Before shmap
+            print(f"Shape of sample_input before shmap: {x.shape}")  # Debug: Before shmap
             state = jax.random.normal(rng, (self.config["layers"], self.config["d_model"], self.config["n_heads"]))
             self.state = state  # Set state manually
             print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
@@ -159,7 +158,7 @@ class CausalTransformer:
             return model.init(rng, x)
 
         # Apply vmap to batch over the function, then pass to shard_map
-        vmapped_fn = jax.vmap(init_fn, in_axes=(0, 0))  # Vmap over the first axis of rng and x
+        vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
 
         # Use shard_map with jax.jit and correctly set the in_specs and out_specs
         self.init_shmap = jax.jit(shard_map(
@@ -171,7 +170,7 @@ class CausalTransformer:
 
         # Initialize state with shmap
         rng = jax.random.split(jax.random.PRNGKey(0), mp)  # Split RNG key for each shard
-        x = jnp.zeros((self.config["seq"], self.config["per_replica_batch"]), dtype=jnp.uint32)
+        x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Reduce the batch size to match mp
         self.init_shmap(rng, x)  # Trigger the initialization process
         
         def train_fn(state, ctx, tgt):
