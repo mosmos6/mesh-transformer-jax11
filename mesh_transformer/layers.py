@@ -401,6 +401,9 @@ class ProjectionShard(nn.Module):
         self.out_dim = self.config["d_model"]
         self.shards = self.config["cores_per_replica"]
         self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(self.shards, -1), ("dp", "mp"))
+        # Define the LayerNorm and Dense layers in setup
+        self.layer_norm = nn.LayerNorm()
+        self.dense = nn.Dense(self.out_dim)
 
     def loss(self, x, target, shard_start_index, z_loss):
         logits = self.forward(x)
@@ -421,8 +424,9 @@ class ProjectionShard(nn.Module):
         return -(softmax_logits.mean() + z_loss_penalty), jnp.argmax(logits, axis=-1) == target
 
     def forward(self, x):
-        x = nn.LayerNorm()(x)
-        x = nn.Dense(self.out_dim)(x)
+        # Use the defined submodules in the forward pass
+        x = self.layer_norm(x)
+        x = self.dense(x)
         return x
 
 
