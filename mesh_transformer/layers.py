@@ -421,7 +421,7 @@ class ProjectionShard(nn.Module):
         return -(softmax_logits.mean() + z_loss_penalty), jnp.argmax(logits, axis=-1) == target
 
     def forward(self, x):
-        x = nn.LayerNorm(create_scale=True, create_offset=True)(x)
+        x = nn.LayerNorm()(x)
         x = nn.Dense(self.out_dim)(x)
         return x
 
