@@ -169,7 +169,7 @@ class CausalTransformer:
         ))
 
         # Initialize state with shmap
-        rng = jax.random.split(jax.random.PRNGKey(0), 'mp')  # Split RNG key for each shard
+        rng = jax.random.split(jax.random.PRNGKey(0), mp)  # Split RNG key for each shard
         x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Reduce the batch size to match mp
         self.init_shmap(rng, x)  # Trigger the initialization process
         
