@@ -427,10 +427,15 @@ class ProjectionShard(nn.Module):
         logits = self.forward(x)
         logits = jnp.swapaxes(logits, 0, 1)
 
+        print(f"Before psum in ProjectionShard- shard_start_index shape: {shard_start_index.shape}")
+
         shard_start_index = jax.lax.psum(shard_start_index, "mp")
+        print(f"After psum in ProjectionShard- shard_start_index shape: {shard_start_index.shape}")
         predicted_logits = jnp.take_along_axis(logits, target[:, :, None] + shard_start_index, axis=-1)
         exp_logits = jnp.exp(logits - logits.max(axis=-1, keepdims=True))
+        print(f"Before psum in ProjectionShard- sum_exp_logits shape: {sum_exp_logits.shape}")
         sum_exp_logits = jax.lax.psum(exp_logits, axis_name="mp")
+        print(f"After psum in ProjectionShard- sum_exp_logits shape: {sum_exp_logits.shape}")
 
         softmax_logits = predicted_logits - jnp.log(sum_exp_logits)
 
