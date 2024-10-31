@@ -378,7 +378,15 @@ class TransformerLayerShard(nn.Module):
         attn_out = self.self_attn(q, v, k, bias)
         dense_out = self.ff(x)
 
-        return jax.lax.psum(attn_out + dense_out, axis_name='mp'), {
+        # Combine attn_out and dense_out before applying psum, for debugging
+        combined_output = attn_out + dense_out
+        print(f"Combined output before psum in decode_once - combined_output shape: {combined_output.shape}")
+
+        # Now apply psum and return the result
+        final_output = jax.lax.psum(combined_output, axis_name='mp')
+        print(f"Final output after psum in decode_once - final_output shape: {final_output.shape}")
+
+        return final_output, {
             "tokens_decoded": tokens_decoded,
             "k": k,
             "v": v
