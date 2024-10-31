@@ -342,7 +342,9 @@ class TransformerLayerShard(nn.Module):
         attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
         dense_out = self.ff(x)
 
-        print(f"Before psum in TransformerLayerShard remat- result shape: {result.shape}")
+        pre_result = attn_out + dense_out
+
+        print(f"Before psum in TransformerLayerShard remat- pre_result shape: {pre_result.shape}")
 
         result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
 
@@ -441,7 +443,7 @@ class ProjectionShard(nn.Module):
         print(f"After psum in ProjectionShard- shard_start_index shape: {shard_start_index.shape}")
         predicted_logits = jnp.take_along_axis(logits, target[:, :, None] + shard_start_index, axis=-1)
         exp_logits = jnp.exp(logits - logits.max(axis=-1, keepdims=True))
-        print(f"Before psum in ProjectionShard- sum_exp_logits shape: {sum_exp_logits.shape}")
+        print(f"Before psum in ProjectionShard- sum_exp_logits shape: {exp_logits.shape}")
         sum_exp_logits = jax.lax.psum(exp_logits, axis_name="mp")
         print(f"After psum in ProjectionShard- sum_exp_logits shape: {sum_exp_logits.shape}")
 
