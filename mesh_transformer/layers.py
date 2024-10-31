@@ -29,9 +29,13 @@ class ReplicatedLayerNorm(nn.Module):
         scale = self.param("scale", nn.initializers.ones, param_shape)
         offset = self.param("offset", nn.initializers.zeros, param_shape)
 
+        print(f"Before psum in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
+
         # Instead of gathering, ensure the params are sharded appropriately across mp
         scale = jax.lax.psum(scale, "mp")  # Sum over shards to combine partial parameters
         offset = jax.lax.psum(offset, "mp")
+
+        print(f"After psum in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
 
         # Broadcast the result, but avoid full replication across mp
         scale = jnp.broadcast_to(scale, inputs.shape)
