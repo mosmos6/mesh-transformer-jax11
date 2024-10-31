@@ -353,8 +353,11 @@ class TransformerLayerShard(nn.Module):
     
 
     def decode_once(self, decode_state, x, attn_bias):
+        print(f"Before psum in decode_once- x shape: {x.shape}")
+
         x = jax.lax.psum(x, axis_name='mp')
         x = self.norm(x)
+        print(f"After psum in decode_once- x shape: {x.shape}")
 
         assert x.shape[0] == 1
 
@@ -384,8 +387,10 @@ class TransformerLayerShard(nn.Module):
     def get_init_decode_state(self, x, given_length, attn_bias):
         mesh = self.mesh_manager.get_mesh()
         with mesh:
+            print(f"Before psum in get_init_decode_state- x shape: {x.shape}")
             x = jax.lax.psum(x, 'mp')
             x = self.norm(x)
+            print(f"After psum in get_init_decode_state- x shape: {x.shape}")
 
         q, v, k = self.qvk_proj(x)
 
