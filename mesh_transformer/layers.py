@@ -327,7 +327,11 @@ class TransformerLayerShard(nn.Module):
     @nn.compact
     def __call__(self, x, attn_bias, layer_index, state):
         # Apply psum for data parallelism
+        print(f"Before psum in TransformerLayerShard - x shape: {x.shape}")
+
         x = jax.lax.psum(x, axis_name='mp')
+
+        print(f"After psum in TransformerLayerShard - x shape: {x.shape}")
 
         # Apply normalization and projections
         x = self.norm(x)
@@ -338,7 +342,12 @@ class TransformerLayerShard(nn.Module):
         attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
         dense_out = self.ff(x)
 
+        print(f"Before psum in TransformerLayerShard remat- result shape: {result.shape}")
+
         result = jax.lax.psum(attn_out + dense_out, axis_name='mp')
+
+        print(f"After psum in TransformerLayerShard remat- result shape: {result.shape}")
+
         return result
 
     
