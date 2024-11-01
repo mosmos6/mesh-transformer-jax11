@@ -85,7 +85,158 @@ def getnorm(type):
         raise Exception("Not implemented")
 
 
-# Other unchanged classes like RelativePositionEmbs, EmbeddingShard, etc.
+class RelativePositionEmbs(nn.Module):
+    num_buckets: int
+    max_distance: int
+
+    @staticmethod
+    def _relative_position_bucket(relative_position, num_buckets=32, max_distance=128):
+        ret = 0
+        n = -relative_position
+        n = np.maximum(n, 0)
+        max_exact = num_buckets // 2
+        is_small = (n < max_exact)
+        val_if_large = max_exact + (
+                np.log(n.astype(np.float32) / max_exact + np.finfo(np.float32).eps) /
+                np.log(max_distance / max_exact) *
+                (num_buckets - max_exact)).astype(np.int32)
+        val_if_large = np.minimum(val_if_large, num_buckets - 1)
+        ret += np.where(is_small, n, val_if_large)
+        return ret
+
+    @nn.compact
+    def __call__(self, qlen, klen, heads):
+        context_position = np.arange(qlen, dtype=jnp.int32)[:, None]
+        memory_position = np.arange(klen, dtype=jnp.int32)[None, :]
+        relative_position = memory_position - context_position
+        rp_bucket = self._relative_position_bucket(relative_position, self.num_buckets, self.max_distance)
+        relative_attention_bias = self.param('rel_embedding', nn.initializers.truncated_normal(stddev=0.02), [heads, self.num_buckets])
+        bcast_iota = jax.lax.broadcasted_iota(jnp.int32, (self.num_buckets, 1, 1), 0)
+        rp_bucket_one_hot = jnp.array(rp_bucket[jnp.newaxis, Ellipsis] == bcast_iota).astype(relative_attention_bias.dtype)
+        values = jax.lax.dot_general(
+            relative_attention_bias,
+            rp_bucket_one_hot,
+            (((1,), (0,)), ((), ())))
+        return values
+
+
+def fixed_pos_embedding(seq_len, n_heads, dim_per_head):
+    theta = jnp.arange(0, dim_per_head // 2, dtype=jnp.float32)
+    theta = 1.0 / (10000 ** (2 * theta / dim_per_head))
+    
+    seq = jnp.arange(seq_len, dtype=jnp.float32)
+    theta = seq[:, None] * theta[None, :]
+    
+    sin = jnp.sin(theta)
+    cos = jnp.cos(theta)
+    
+    # Expand dimensions to match input tensors
+    sin = sin[:, None, :].repeat(n_heads, axis=1)  # Shape: (seq_len, n_heads, dim_per_head // 2)
+    cos = cos[:, None, :].repeat(n_heads, axis=1)
+
+    sin = sin.repeat(2, axis=-1)  # Shape: (seq_len, n_heads, dim_per_head)
+    cos = cos.repeat(2, axis=-1)  # Shape: (seq_len, n_heads, dim_per_head)
+    
+    # Adjust shapes to match input x (batch size, seq_len, n_heads, dim_per_head)
+    sin = sin[:, None, :, :]  # Add batch size dimension, Shape: (seq_len, 1, n_heads, dim_per_head)
+    cos = cos[:, None, :, :]  # Add batch size dimension, Shape: (seq_len, 1, n_heads, dim_per_head)
+    
+    return sin, cos
+
+
+
+
+
+    
+
+def rotate_every_two(x):
+    # Debug: Print the initial shape of x
+    print(f"rotate_every_two: Input x shape: {x.shape}")
+
+    x1 = x[..., ::2]
+    x2 = x[..., 1::2]
+
+    # Debug: Print the shapes after selecting even and odd elements
+    print(f"rotate_every_two: x1 shape: {x1.shape}, x2 shape: {x2.shape}")
+
+    # Combine x1 and x2 back together after rotation
+    x = jnp.stack((-x2, x1), axis=-1)
+
+    # Debug: Print the shape after stacking
+    print(f"rotate_every_two: shape after stacking: {x.shape}")
+
+    # Rearrange to original shape with doubled last dimension
+    reshaped_x = rearrange(x, '... d j -> ... (d j)')
+    print(f"rotate_every_two: Reshaped x shape: {reshaped_x.shape}")
+
+    return reshaped_x
+
+
+
+
+from einops import repeat
+
+def apply_rotary_pos_emb(x, sincos):
+    sin, cos = sincos
+    print(f"apply_rotary_pos_emb: x shape: {x.shape}, sin shape: {sin.shape}, cos shape: {cos.shape}")
+
+    # Split the input tensor into two parts and apply the rotary transformation
+    x1 = x[..., ::2]
+    x2 = x[..., 1::2]
+
+    rotated_x1 = (x1 * cos) - (x2 * sin)
+    rotated_x2 = (x2 * cos) + (x1 * sin)
+
+    # Efficiently combine back the results
+    x_out = jnp.concatenate([rotated_x1[..., None], rotated_x2[..., None]], axis=-1).reshape(x.shape)
+
+    return x_out
+
+
+class EmbeddingShard(nn.Module):
+    config: dict
+
+    def setup(self):
+        in_dim = self.config["n_vocab"]
+        out_dim = self.config["d_model"]
+        shards = self.config["cores_per_replica"]
+
+        assert in_dim % shards == 0
+
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.in_dim_per_shard = in_dim // shards
+        self.out_dim_per_shard = out_dim // shards
+
+        if self.config["pe"] == "fixed":
+            embed_init = nn.initializers.truncated_normal(stddev=0.02)
+            self.positional_embeddings = self.param('pos_embs', embed_init, [self.config["seq"], self.out_dim_per_shard])
+        else:
+            self.positional_embeddings = None
+
+        self.proj = nn.Dense(self.out_dim, kernel_init=nn.initializers.truncated_normal(stddev=1 / np.sqrt(in_dim)))
+
+    def __call__(self, x, dtype=jnp.bfloat16):
+        shard_start_index = jax.lax.axis_index('mp') * self.in_dim_per_shard
+
+        # Use one-hot encoding for input
+        input_onehot = jax.nn.one_hot(x - shard_start_index, self.in_dim_per_shard)
+        proj_out = self.proj(input_onehot)
+
+        # Sum across all devices
+        proj_out = g_psum(proj_out)
+
+        # Apply positional embeddings if available
+        if self.positional_embeddings is not None:
+            all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'mp')
+
+            # Flatten and transpose like original GPT-J
+            all_pos_embed = jnp.transpose(all_pos_embed, (1, 0, 2)).reshape(self.config["seq"], -1)
+
+            proj_out += all_pos_embed
+
+        return proj_out
+
 
 class TransformerLayerShard(nn.Module):
     config: dict
