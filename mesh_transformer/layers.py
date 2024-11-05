@@ -298,7 +298,7 @@ class TransformerLayerShard(nn.Module):
 
         print(f"Before g_psum in TransformerLayerShard remat- pre_result shape: {pre_result.shape}")
 
-        result = g_psum(pre_result)  # Use g_psum for final reduction
+        result = g_psum(pre_result, axis_name="mp")  # Use g_psum for final reduction
 
         print(f"After g_psum in TransformerLayerShard remat- result shape: {result.shape}")
 
@@ -307,7 +307,7 @@ class TransformerLayerShard(nn.Module):
     def decode_once(self, decode_state, x, attn_bias):
         print(f"Before f_psum in decode_once - x shape: {x.shape}")
 
-        x = f_psum(x)
+        x = f_psum(x, axis_name="mp")
         x = self.norm(x)
         print(f"After f_psum in decode_once - x shape: {x.shape}")
 
@@ -330,7 +330,7 @@ class TransformerLayerShard(nn.Module):
         combined_output = attn_out + dense_out
         print(f"Combined output before g_psum in decode_once - combined_output shape: {combined_output.shape}")
 
-        final_output = g_psum(combined_output)
+        final_output = g_psum(combined_output, axis_name="mp")
         print(f"Final output after g_psum in decode_once - final_output shape: {final_output.shape}")
 
         return final_output, {
@@ -342,7 +342,7 @@ class TransformerLayerShard(nn.Module):
     def get_init_decode_state(self, x, given_length, attn_bias):
         with self.mesh_manager.get_mesh():
             print(f"Before f_psum in get_init_decode_state - x shape: {x.shape}")
-            x = f_psum(x)
+            x = f_psum(x, axis_name="mp")
             x = self.norm(x)
             print(f"After f_psum in get_init_decode_state - x shape: {x.shape}")
 
@@ -379,13 +379,13 @@ class ProjectionShard(nn.Module):
 
         print(f"Before g_psum in ProjectionShard - shard_start_index shape: {shard_start_index.shape}")
 
-        shard_start_index = g_psum(shard_start_index)
+        shard_start_index = g_psum(shard_start_index, axis_name="mp")
         print(f"After g_psum in ProjectionShard - shard_start_index shape: {shard_start_index.shape}")
 
         predicted_logits = jnp.take_along_axis(logits, target[:, :, None] + shard_start_index, axis=-1)
         exp_logits = jnp.exp(logits - logits.max(axis=-1, keepdims=True))
         print(f"Before g_psum in ProjectionShard - sum_exp_logits shape: {exp_logits.shape}")
-        sum_exp_logits = g_psum(exp_logits)
+        sum_exp_logits = g_psum(exp_logits, axis_name="mp")
         print(f"After g_psum in ProjectionShard - sum_exp_logits shape: {sum_exp_logits.shape}")
 
         softmax_logits = predicted_logits - jnp.log(sum_exp_logits)
