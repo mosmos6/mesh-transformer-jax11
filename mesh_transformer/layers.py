@@ -29,8 +29,8 @@ class ReplicatedLayerNorm(nn.Module):
         print(f"Before g_psum in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
 
         # Replace with g_psum for psum in forward pass only
-        scale = g_psum(scale)
-        offset = g_psum(offset)
+        scale = g_psum(scale, axis_name="mp")
+        offset = g_psum(offset, axis_name="mp")
 
         print(f"After g_psum in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
 
@@ -55,12 +55,12 @@ class RMSNorm(nn.Module):
         normed = x / (jnp.linalg.norm(x, axis=-1, keepdims=True) + 1e-5)
 
         scale = self.param('scale', nn.initializers.constant(x.shape[-1] ** 0.5), param_shape)
-        scale = f_psum(scale)  # Using f_psum
+        scale = f_psum(scale, axis_name="mp")  # Using f_psum
         normed = normed * scale
 
         if self.offset:
             offset = self.param('offset', nn.initializers.zeros, param_shape)
-            offset = f_psum(offset)  # Using f_psum
+            offset = f_psum(offset, axis_name="mp")  # Using f_psum
             normed = normed + offset
 
         return normed
@@ -282,7 +282,7 @@ class TransformerLayerShard(nn.Module):
     def __call__(self, x, attn_bias, layer_index, state):
         print(f"Before f_psum in TransformerLayerShard - x shape: {x.shape}")
 
-        x = f_psum(x)  # Use f_psum for data parallelism
+        x = f_psum(x, axis_name="mp")  # Use f_psum for data parallelism
 
         print(f"After f_psum in TransformerLayerShard - x shape: {x.shape}")
 
