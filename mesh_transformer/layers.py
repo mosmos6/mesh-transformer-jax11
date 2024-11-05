@@ -365,7 +365,7 @@ class ProjectionShard(nn.Module):
     config: dict
 
     def setup(self):
-        self.dim_per_shard = self.config["dim_per_shard"]
+        self.dim_per_shard = self.config.get("dim_per_shard", self.dim // self.shards)
         self.out_dim = self.config["d_model"]
         self.shards = self.config["cores_per_replica"]
         self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(self.shards, -1), ("dp", "mp"))
