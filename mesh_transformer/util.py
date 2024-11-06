@@ -89,17 +89,19 @@ def to_f16(t):
 
 # identity in forward pass, psum in backward
 @jax.custom_vjp
-def f_psum(x, axis_name, reduce_to_first=True):
+def f_psum(x, reduce_to_first=True):
+    axis_name = "mp"  # Define axis_name here to avoid passing as a parameter
     result = x
     if reduce_to_first:
         result = result[0]
     return result
 
-def f_psum_fwd(x, axis_name, reduce_to_first=True):
-    return f_psum(x, axis_name, reduce_to_first), None
+def f_psum_fwd(x, reduce_to_first=True):
+    return f_psum(x, reduce_to_first), None
 
 def f_psum_bwd(_, g):
-    return jax.lax.psum(g, axis_name),  # Pass axis_name here directly
+    axis_name = "mp"  # Define axis_name here for backward calculation
+    return jax.lax.psum(g, axis_name),
 
 f_psum.defvjp(f_psum_fwd, f_psum_bwd)
 
@@ -123,17 +125,19 @@ f_pmean.defvjp(f_pmean_fwd, f_pmean_bwd)
 
 # psum in forward pass, identity in backward
 @jax.custom_vjp
-def g_psum(x, axis_name, reduce_to_first=True):
-    result = jax.lax.psum(x, axis_name)  # Pass axis_name directly here
+def g_psum(x, reduce_to_first=True):
+    axis_name = "mp"  # Define axis_name here to avoid passing as a parameter
+    result = jax.lax.psum(x, axis_name)
     if reduce_to_first:
         result = result[0]  # Narrow to the first index if reduction is desired
     return result
 
-def g_psum_fwd(x, axis_name, reduce_to_first=True):
-    return g_psum(x, axis_name, reduce_to_first), None
+def g_psum_fwd(x, reduce_to_first=True):
+    return g_psum(x, reduce_to_first), None
 
 def g_psum_bwd(_, g):
-    return jax.lax.psum(g, "mp"),  # Provide "mp" as default here only for backward calculation
+    axis_name = "mp"  # Define axis_name here for backward calculation as well
+    return jax.lax.psum(g, axis_name),
 
 g_psum.defvjp(g_psum_fwd, g_psum_bwd)
 
