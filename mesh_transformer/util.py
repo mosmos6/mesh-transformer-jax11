@@ -89,17 +89,17 @@ def to_f16(t):
 
 # identity in forward pass, psum in backward
 @jax.custom_vjp
-def f_psum(x, axis_name="mp", reduce_to_first=False):
-    result = x  # Identity in forward pass
+def f_psum(x, axis_name, reduce_to_first=True):
+    result = x
     if reduce_to_first:
-        result = result[0]  # Narrow to first if required
+        result = result[0]
     return result
 
-def f_psum_fwd(x, axis_name="mp", reduce_to_first=False):
+def f_psum_fwd(x, axis_name, reduce_to_first=True):
     return f_psum(x, axis_name, reduce_to_first), None
 
 def f_psum_bwd(_, g):
-    return jax.lax.psum(g, axis_name)  # Perform psum in the backward pass
+    return jax.lax.psum(g, axis_name),  # Pass axis_name here directly
 
 f_psum.defvjp(f_psum_fwd, f_psum_bwd)
 
@@ -123,20 +123,19 @@ f_pmean.defvjp(f_pmean_fwd, f_pmean_bwd)
 
 # psum in forward pass, identity in backward
 @jax.custom_vjp
-def g_psum(x, axis_name="mp", reduce_to_first=False):
-    result = jax.lax.psum(x, axis_name)
+def g_psum(x, axis_name, reduce_to_first=True):
+    result = jax.lax.psum(x, axis_name)  # Pass axis_name directly here
     if reduce_to_first:
-        result = result[0]  # Select the first index if reduction to one replica is desired
+        result = result[0]  # Narrow to the first index if reduction is desired
     return result
 
-def g_psum_fwd(x, axis_name="mp", reduce_to_first=False):
+def g_psum_fwd(x, axis_name, reduce_to_first=True):
     return g_psum(x, axis_name, reduce_to_first), None
 
 def g_psum_bwd(_, g):
-    return g,  # Identity in the backward pass
+    return jax.lax.psum(g, "mp"),  # Provide "mp" as default here only for backward calculation
 
 g_psum.defvjp(g_psum_fwd, g_psum_bwd)
-
 
 def shard_axis(x, axis_size, axis_name='mp'):
     assert x.shape[0] % axis_size == 0
