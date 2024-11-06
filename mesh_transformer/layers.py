@@ -29,8 +29,8 @@ class ReplicatedLayerNorm(nn.Module):
         print(f"Before g_psum in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
 
         # Replace with g_psum for psum in forward pass only
-        scale = g_psum(scale, axis_name="mp")
-        offset = g_psum(offset, axis_name="mp")
+        scale = g_psum(scale, axis_name="mp", reduce_to_first=True)
+        offset = g_psum(offset, axis_name="mp", reduce_to_first=True)
 
         print(f"After g_psum in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
 
