@@ -91,7 +91,7 @@ def to_f16(t):
 @jax.custom_vjp
 def f_psum(x):
     axis_name = "mp"  # Define axis_name here to avoid passing as a parameter
-    reduce_to_first = True  # Set directly as a boolean
+    reduce_to_first = False  # Set directly as a boolean
     result = x
     if reduce_to_first:
         result = result[0]
@@ -105,6 +105,19 @@ def f_psum_bwd(_, g):
     return jax.lax.psum(g, axis_name),
 
 f_psum.defvjp(f_psum_fwd, f_psum_bwd)
+
+@jax.custom_vjp
+def f_psum_first(x):
+    return x[0]  # Narrow to the first index in forward pass
+
+def f_psum_first_fwd(x):
+    return f_psum_first(x), None
+
+def f_psum_first_bwd(_, g):
+    axis_name = "mp"
+    return jax.lax.psum(g, axis_name),
+
+f_psum_first.defvjp(f_psum_first_fwd, f_psum_first_bwd)
 
 # identity in forward pass, pmean in backward
 @jax.custom_vjp
@@ -127,7 +140,7 @@ f_pmean.defvjp(f_pmean_fwd, f_pmean_bwd)
 @jax.custom_vjp
 def g_psum(x):
     axis_name = "mp"  # Define axis_name here to avoid passing as a parameter
-    reduce_to_first = True  # Set directly as a boolean
+    reduce_to_first = False  # Set directly as a boolean
     result = jax.lax.psum(x, axis_name)
     if reduce_to_first:
         result = result[0]  # Narrow to the first index if reduction is desired
@@ -141,6 +154,23 @@ def g_psum_bwd(_, g):
     return jax.lax.psum(g, axis_name),
 
 g_psum.defvjp(g_psum_fwd, g_psum_bwd)
+
+
+@jax.custom_vjp
+def g_psum_first(x):
+    axis_name = "mp"  # Define axis_name
+    result = jax.lax.psum(x, axis_name)
+    return result[0]  # Always narrow to the first index
+
+def g_psum_first_fwd(x):
+    return g_psum_first(x), None
+
+def g_psum_first_bwd(_, g):
+    axis_name = "mp"  # Define axis_name for backward calculation
+    return jax.lax.psum(g, axis_name),
+
+g_psum_first.defvjp(g_psum_first_fwd, g_psum_first_bwd)
+
 
 def shard_axis(x, axis_size, axis_name='mp'):
     assert x.shape[0] % axis_size == 0
