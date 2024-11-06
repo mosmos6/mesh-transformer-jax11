@@ -224,7 +224,7 @@ class EmbeddingShard(nn.Module):
         proj_out = self.proj(input_onehot)
 
         # Sum across all devices
-        proj_out = g_psum(proj_out, axis_name="mp")
+        proj_out = g_psum(proj_out, "mp")
 
         # Apply positional embeddings if available
         if self.positional_embeddings is not None:
