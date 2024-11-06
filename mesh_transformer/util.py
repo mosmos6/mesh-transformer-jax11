@@ -89,17 +89,17 @@ def to_f16(t):
 
 # identity in forward pass, psum in backward
 @jax.custom_vjp
-def f_psum(x):
-    return x
+def f_psum(x, axis_name="mp", reduce_to_first=False):
+    result = x  # Identity in forward pass
+    if reduce_to_first:
+        result = result[0]  # Narrow to first if required
+    return result
 
-
-def f_psum_fwd(x):
-    return f_psum(x), None
-
+def f_psum_fwd(x, axis_name="mp", reduce_to_first=False):
+    return f_psum(x, axis_name, reduce_to_first), None
 
 def f_psum_bwd(_, g):
-    return jax.lax.psum(g, "mp"),
-
+    return jax.lax.psum(g, axis_name)  # Perform psum in the backward pass
 
 f_psum.defvjp(f_psum_fwd, f_psum_bwd)
 
@@ -123,17 +123,17 @@ f_pmean.defvjp(f_pmean_fwd, f_pmean_bwd)
 
 # psum in forward pass, identity in backward
 @jax.custom_vjp
-def g_psum(x):
-    return jax.lax.psum(x, "mp")
+def g_psum(x, axis_name="mp", reduce_to_first=False):
+    result = jax.lax.psum(x, axis_name)
+    if reduce_to_first:
+        result = result[0]  # Select the first index if reduction to one replica is desired
+    return result
 
-
-def g_psum_fwd(x):
-    return g_psum(x), None
-
+def g_psum_fwd(x, axis_name="mp", reduce_to_first=False):
+    return g_psum(x, axis_name, reduce_to_first), None
 
 def g_psum_bwd(_, g):
-    return g,
-
+    return g,  # Identity in the backward pass
 
 g_psum.defvjp(g_psum_fwd, g_psum_bwd)
 
