@@ -290,6 +290,12 @@ class TransformerLayerShard(nn.Module):
         x = self.norm(x)
         q, v, k = self.q(x), self.v(x), self.k(x)
 
+        # Setting up causal mask and bias, based on the original approach
+        seq_len = x.shape[0]
+        causal_mask = np.tril(np.ones((seq_len, seq_len)))
+        bias = -1e10 * (1. - causal_mask)
+        bias += attn_bias  # Add attn_bias if present
+
         attn_out = self.self_attn(q, v, k, attn_bias)
         attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
         dense_out = self.ff(x)
