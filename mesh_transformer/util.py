@@ -108,7 +108,7 @@ f_psum.defvjp(f_psum_fwd, f_psum_bwd)
 
 @jax.custom_vjp
 def f_psum_first(x):
-    return x[0]  # Narrow to the first index in forward pass
+    return jax.lax.all_gather(x, 'mp')[0]
 
 def f_psum_first_fwd(x):
     return f_psum_first(x), None
@@ -158,9 +158,7 @@ g_psum.defvjp(g_psum_fwd, g_psum_bwd)
 
 @jax.custom_vjp
 def g_psum_first(x):
-    axis_name = "mp"  # Define axis_name
-    result = jax.lax.psum(x, axis_name)
-    return result[0]  # Always narrow to the first index
+    return jax.lax.all_gather(x, 'mp')[0]
 
 def g_psum_first_fwd(x):
     return g_psum_first(x), None
