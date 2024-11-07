@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 from einops import rearrange, repeat
 
-from mesh_transformer.util import f_psum, g_psum, maybe_shard, head_print
+from mesh_transformer.util import f_psum, g_psum, f_psum_first, g_psum_first, maybe_shard, head_print
 from jax.sharding import PartitionSpec as P
 from jax.experimental.shard_map import shard_map
 from mesh_transformer.mesh_context_manager import MeshContextManager
