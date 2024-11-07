@@ -26,13 +26,13 @@ class ReplicatedLayerNorm(nn.Module):
         scale = self.param("scale", nn.initializers.ones, param_shape)
         offset = self.param("offset", nn.initializers.zeros, param_shape)
 
-        print(f"Before g_psum in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
+        print(f"Before all_gather in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
 
         # Replace with g_psum for psum in forward pass only
-        scale = g_psum_first(scale)
-        offset = g_psum_first(offset)
+        scale = jax.lax.all_gather(scale, "mp")[0]
+        offset = jax.lax.all_gather(offset, "mp")[0]
 
-        print(f"After g_psum in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
+        print(f"After all_gather in ReplicatedLayerNorm - scale shape: {scale.shape}, offset shape: {offset.shape}")
 
         scale = jnp.broadcast_to(scale, inputs.shape)
         offset = jnp.broadcast_to(offset, inputs.shape)
