@@ -249,6 +249,8 @@ class TransformerLayerShard(nn.Module):
         self.shards = self.config["cores_per_replica"]
         self.norm = getnorm(self.config["norm"])
         self.is_rotary = self.config["pe"] == "rotary"
+        self.qvk_proj_layer = nn.Dense(3 * self.n_heads * self.dim_per_head, use_bias=False)
+
 
         assert self.dim % self.n_heads == 0
         assert self.n_heads % self.shards == 0
@@ -278,6 +280,18 @@ class TransformerLayerShard(nn.Module):
         dense_proj = jax.nn.gelu(dense_proj)
         return self.dense_proj_o(dense_proj)
 
+    def qvk_proj(self, x):
+        # Assuming a single dense layer is set up for this purpose in setup as `self.qvk_proj_layer`
+        qvk = self.qvk_proj_layer(x)  # Output size should be 3 * (n_heads * dim_per_head)
+    
+        # Splitting qvk into q, v, k and reshaping each accordingly
+        q, v, k = jnp.split(qvk, 3, axis=-1)
+        q = q.reshape(x.shape[:-1] + (self.n_heads, self.dim_per_head))
+        v = v.reshape(x.shape[:-1] + (self.n_heads, self.dim_per_head))
+        k = k.reshape(x.shape[:-1] + (self.n_heads, self.dim_per_head))
+        return q, v, k
+
+
     @nn.compact
     def __call__(self, x, attn_bias, layer_index, state):
         print(f"Before f_psum in TransformerLayerShard - x shape: {x.shape}")
@@ -288,7 +302,7 @@ class TransformerLayerShard(nn.Module):
 
         # Apply normalization and projections
         x = self.norm(x)
-        q, v, k = self.q(x), self.v(x), self.k(x)
+        q, v, k = self.qvk_proj(x)  # Combined q, v, k calculation
 
         # Setting up causal mask and bias, based on the original approach
         seq_len = x.shape[0]
@@ -297,7 +311,7 @@ class TransformerLayerShard(nn.Module):
         bias += attn_bias  # Add attn_bias if present
 
         attn_out = self.self_attn(q, v, k, attn_bias)
-        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
+        # attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
         dense_out = self.ff(x)
 
         pre_result = attn_out + dense_out
