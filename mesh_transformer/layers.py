@@ -246,6 +246,7 @@ class TransformerLayerShard(nn.Module):
     def setup(self):
         self.n_heads = self.config["n_heads"]
         self.dim = self.config["d_model"]
+        self.dim_per_head = self.dim // self.n_heads
         self.shards = self.config["cores_per_replica"]
         self.norm = getnorm(self.config["norm"])
         self.is_rotary = self.config["pe"] == "rotary"
@@ -255,7 +256,6 @@ class TransformerLayerShard(nn.Module):
         assert self.dim % self.n_heads == 0
         assert self.n_heads % self.shards == 0
 
-        self.dim_per_head = self.dim // self.n_heads
         self.heads_per_shard = self.n_heads // self.shards
         self.dim_per_shard = self.dim // self.shards
         self.pe_rotary_dims = self.config.get("pe_rotary_dims", self.dim_per_head)
