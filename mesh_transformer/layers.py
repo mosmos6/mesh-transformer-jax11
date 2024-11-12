@@ -281,14 +281,10 @@ class TransformerLayerShard(nn.Module):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        # Assuming a single dense layer is set up for this purpose in setup as `self.qvk_proj_layer`
-        qvk = self.qvk_proj_layer(x)  # Output size should be 3 * (n_heads * dim_per_head)
-    
-        # Splitting qvk into q, v, k and reshaping each accordingly
-        q, v, k = jnp.split(qvk, 3, axis=-1)
-        q = q.reshape(x.shape[:-1] + (self.n_heads, self.dim_per_head))
-        v = v.reshape(x.shape[:-1] + (self.n_heads, self.dim_per_head))
-        k = k.reshape(x.shape[:-1] + (self.n_heads, self.dim_per_head))
+        q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+        v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+        k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
+
         return q, v, k
 
 
