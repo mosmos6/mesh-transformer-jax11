@@ -415,7 +415,9 @@ class ProjectionShard(nn.Module):
 
     def forward(self, x):
         x = self.layer_norm(x)
+        print(f"After forward layer_norm - x shape: {x.shape}")
         x = self.dense(x)
+        print(f"After forward dense - x shape: {x.shape}")
         return x
 
 
