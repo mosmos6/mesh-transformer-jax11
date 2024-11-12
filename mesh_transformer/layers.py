@@ -281,11 +281,14 @@ class TransformerLayerShard(nn.Module):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
-        q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
-        v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
-        k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
-
+        # Project x directly into separate q, v, k with shape (seq_len, dim_per_head)
+        q = self.q(x)
+        v = self.v(x)
+        k = self.k(x)
+    
+        # No need to reshape further since we’re staying with 3D tensors
         return q, v, k
+
 
 
     @nn.compact
