@@ -310,7 +310,7 @@ class TransformerLayerShard(nn.Module):
         bias += attn_bias  # Add attn_bias if present
 
         attn_out = self.self_attn(q, v, k, attn_bias)
-        attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
+        # attn_out = attn_out.reshape((x.shape[0], x.shape[1], self.n_heads * self.dim_per_head))
         dense_out = self.ff(x)
 
         pre_result = attn_out + dense_out
