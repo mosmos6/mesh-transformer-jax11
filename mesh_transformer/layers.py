@@ -429,7 +429,7 @@ class Projection(nn.Module):
 
     def setup(self):
         self.dim = self.config["n_vocab"]
-        self.norm = nn.LayerNorm()
+        self.norm = getnorm(self.config["norm"])
         self.proj = nn.Dense(self.dim)
 
     def __call__(self, x):
