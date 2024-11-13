@@ -389,7 +389,7 @@ class ProjectionShard(nn.Module):
         self.dim_per_shard = self.config.get("dim_per_shard", self.dim // self.shards)
         self.out_dim = self.config["d_model"]
         self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(self.shards, -1), ("dp", "mp"))
-        self.layer_norm = getnorm(config["norm"])
+        self.layer_norm = getnorm(self.config["norm"])
         self.dense = nn.Dense(self.out_dim)
 
     def loss(self, x, target, shard_start_index, z_loss):
