@@ -16,6 +16,9 @@ from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
 
 
+
+os.environ["XLA_PJIT_MEMORY_FRACTION"] = "0.8"
+
 class CausalTransformerShard(nn.Module):
     config: dict
     mesh_manager: object
