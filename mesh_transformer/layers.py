@@ -389,7 +389,7 @@ class ProjectionShard(nn.Module):
         self.dim_per_shard = self.config.get("dim_per_shard", self.dim // self.shards)
         self.out_dim = self.config["d_model"]
         self.mesh = jax.sharding.Mesh(np.array(jax.devices()).reshape(self.shards, -1), ("dp", "mp"))
-        self.layer_norm = nn.LayerNorm()
+        self.layer_norm = getnorm(config["norm"])
         self.dense = nn.Dense(self.out_dim)
 
     def loss(self, x, target, shard_start_index, z_loss):
@@ -419,6 +419,9 @@ class ProjectionShard(nn.Module):
         x = self.dense(x)
         print(f"After forward dense - x shape: {x.shape}")
         return x
+
+    def __call__(self, x):
+        return self.forward(x)  # Define the forward pass by calling the forward method
 
 
 class Projection(nn.Module):
