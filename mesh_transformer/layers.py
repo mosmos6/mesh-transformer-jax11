@@ -224,11 +224,17 @@ class EmbeddingShard(nn.Module):
         proj_out = self.proj(input_onehot)
 
         # Sum across all devices
+        print(f"Before Sum across all devices - x shape: {x.shape}")
         proj_out = g_psum(proj_out)
+        print(f"After Sum across all devices - x shape: {x.shape}")
+
+        
 
         # Apply positional embeddings if available
         if self.positional_embeddings is not None:
+            print(f"Before all_pos_embed with all_gather - x shape: {x.shape}")
             all_pos_embed = jax.lax.all_gather(self.positional_embeddings, 'mp')
+            print(f"After all_pos_embed with all_gather - x shape: {x.shape}")
 
             # Flatten and transpose like original GPT-J
             all_pos_embed = jnp.transpose(all_pos_embed, (1, 0, 2)).reshape(self.config["seq"], -1)
