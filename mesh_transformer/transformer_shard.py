@@ -66,7 +66,8 @@ class CausalTransformerShard(nn.Module):
             print(f"Shape of x before layer {layer_index}: {x.shape}")  # Debug: Check x shape before each layer
             x = layer(x, attn_bias, layer_index, self.state)  # Pass the layer_index here
             print(f"Shape of x after layer {layer_index}: {x.shape}")  # Debug: Check x shape after each layer
-
+            
+        print(f"Shape of x before proj forward: {x.shape}") 
         return self.proj.forward(x)
 
     def eval(self, context, target, z_loss=0., mask=0.0):
