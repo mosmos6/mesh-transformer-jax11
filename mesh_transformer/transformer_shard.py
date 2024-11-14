@@ -1,3 +1,6 @@
+import os
+os.environ["XLA_PJIT_MEMORY_FRACTION"] = "0.8"
+
 from functools import partial
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P
@@ -6,7 +9,6 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
-import os
 import numpy as np
 
 # Assume these imports are defined properly
@@ -17,7 +19,7 @@ from mesh_transformer.mesh_context_manager import MeshContextManager  # Import f
 
 
 
-os.environ["XLA_PJIT_MEMORY_FRACTION"] = "0.8"
+
 
 class CausalTransformerShard(nn.Module):
     config: dict
