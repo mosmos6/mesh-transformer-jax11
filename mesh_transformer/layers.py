@@ -427,6 +427,7 @@ class ProjectionShard(nn.Module):
         return x
 
     def __call__(self, x):
+        print(f"Before forward call - x shape: {x.shape}")
         return self.forward(x)  # Define the forward pass by calling the forward method
 
 
