@@ -1,5 +1,8 @@
 import os
 os.environ["XLA_PJIT_MEMORY_FRACTION"] = "0.8"
+print("memory fraction done") 
+os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=1 --xla_gpu_force_compilation_parallelism=1'
+print("xla flags done") 
 
 from functools import partial
 from jax.experimental import mesh_utils
@@ -67,8 +70,8 @@ class CausalTransformerShard(nn.Module):
             x = layer(x, attn_bias, layer_index, self.state)  # Pass the layer_index here
             print(f"Shape of x after layer {layer_index}: {x.shape}")  # Debug: Check x shape after each layer
             
-        print(f"Shape of x before proj forward: {x.shape}") 
-        return self.proj.forward(x)
+        print(f"Shape of x before proj call: {x.shape}") 
+        return self.proj(x)
 
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
