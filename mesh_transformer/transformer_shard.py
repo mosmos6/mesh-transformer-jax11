@@ -170,15 +170,13 @@ class CausalTransformer:
 
         # Apply vmap to batch over the function, then pass to shard_map
         vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
-
-        self.init_shmap = vmapped_fn
         
-        #self.init_shmap = jax.jit(shard_map(
-        #    vmapped_fn,  # Use the vmapped version of the function
-        #    in_specs=(None, P('mp', 'dp')),  # Don't shard rng, shard input over mp
-        #    out_specs=(P()),  
-        #    mesh=mesh_manager.get_mesh()
-        #))
+        self.init_shmap = jax.jit(shard_map(
+            vmapped_fn,  # Use the vmapped version of the function
+            in_specs=(None, P('mp', 'dp')),  # Don't shard rng, shard input over mp
+            out_specs=(P()),  
+            mesh=mesh_manager.get_mesh()
+        ))
 
         # Initialize state with shmap
         rng = jax.random.split(jax.random.PRNGKey(0), mp)  # Split RNG key for each shard
