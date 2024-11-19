@@ -169,13 +169,6 @@ class CausalTransformer:
 
         # Apply vmap to batch over the function, then pass to shard_map
         vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
-
-        with mesh_manager.get_mesh():
-            self.init_shmap = vmapped_fn  # Bypass shard_map
-            rng = jax.random.split(jax.random.PRNGKey(0), mp)  # Split RNG for each shard
-            x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Adjust input shape
-            self.init_shmap(rng, x)  # Trigger the initialization process
-
         
         #self.init_shmap = jax.jit(shard_map(
         #    vmapped_fn,  # Use the vmapped version of the function
@@ -184,11 +177,18 @@ class CausalTransformer:
         #    mesh=mesh_manager.get_mesh()
         #))
 
+        self.init_shmap = jax.jit(shard_map(
+            vmapped_fn,  # Use the vmapped version of the function
+            in_specs=(P('mp', 'dp')),  # Don't shard rng, shard input over mp
+            out_specs=(P('mp', 'dp')),  
+            mesh=mesh_manager.get_mesh()
+        ))
+
         # Initialize state with shmap
-        #rng = jax.random.split(jax.random.PRNGKey(0), mp)  # Split RNG key for each shard
-        #x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Reduce the batch size to match mp
-        #self.init_shmap(rng, x)  # Trigger the initialization process
-        #print("init shmap done")
+        rng = jax.random.split(jax.random.PRNGKey(0), mp)  # Split RNG key for each shard
+        x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Reduce the batch size to match mp
+        self.init_shmap(rng, x)  # Trigger the initialization process
+        print("init shmap done")
         
         def train_fn(state, ctx, tgt):
             def train_loss(x, y):
