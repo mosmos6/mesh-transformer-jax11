@@ -1,6 +1,5 @@
 import os
-os.environ["XLA_PJIT_MEMORY_FRACTION"] = "0.8"
-print("memory fraction done") 
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=1 --xla_gpu_force_compilation_parallelism=1'
 print("xla flags done") 
 
@@ -158,16 +157,15 @@ class CausalTransformer:
         def init_fn(rng, x):
             # Ensure rng is treated as dynamic and not static
             print(f"Shape of sample_input before shmap: {x.shape}")  # Debug: Before shmap
-            #state = jax.random.normal(rng, (self.config["layers"], self.config["d_model"], self.config["n_heads"]))
-            #self.state = state  # Set state manually
-            #print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
-            #print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
+            state = jax.random.normal(rng, (self.config["layers"], self.config["d_model"], self.config["n_heads"]))
+            self.state = state  # Set state manually
+            print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
+            print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
             
-            #model = CausalTransformerShard(config=self.config, mesh_manager=mesh_manager, init_state=self.state)
-            #print("causaltransformershard loaded")
-            #model_output = model.init(rng, x)
-            #return model_output, self.state
-            return x, None
+            model = CausalTransformerShard(config=self.config, mesh_manager=mesh_manager, init_state=self.state)
+            print("causaltransformershard loaded")
+            model_output = model.init(rng, x)
+            return model_output, self.state
 
         # Apply vmap to batch over the function, then pass to shard_map
         vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
