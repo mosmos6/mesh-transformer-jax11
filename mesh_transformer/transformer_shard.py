@@ -179,9 +179,10 @@ class CausalTransformer:
 
         self.init_shmap = jax.jit(shard_map(
             vmapped_fn,  # Use the vmapped version of the function
-            in_specs=(P('mp'), P()),  # Don't shard rng, shard input over mp
-            out_specs=(P('mp'), P()),  
-            mesh=mesh_manager.get_mesh()
+            in_specs=(P('mp'), P('mp')),  # Don't shard rng, shard input over mp
+            out_specs=(P('mp'), P('mp')),  
+            mesh=mesh_manager.get_mesh(),
+            check_rep=False
         ))
 
         # Initialize state with shmap
