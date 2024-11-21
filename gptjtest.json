@@ -9,7 +9,7 @@
   "pe_rotary_dims": 128,
 
   "seq": 2048,
-  "cores_per_replica": 8,
+  "cores_per_replica": 4,
   "per_replica_batch": 1,
   "gradient_accumulation_steps": 992,
 
