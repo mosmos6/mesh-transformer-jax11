@@ -188,16 +188,14 @@ class CausalTransformer:
             mesh=mesh_manager.get_mesh()
         ))
 
-        # Initialize state with shmap
-        # Initialize a base PRNG key
-        base_rng = jax.random.PRNGKey(0)
+
 
         # Split the key for the total number of devices
         total_devices = jax.device_count()  # This is 8 for TPU v2-8
-        rng = jax.random.split(base_rng, total_devices)
-        print(f"Base RNG shape: {base_rng.shape}")
-        print(f"Split RNG shape: {rng.shape}")  # Should match the mesh dimensions
-
+        split_rng = self.rng_manager.split(total_devices)
+        print(f"Base RNG shape: {self.rng_manager.get_current_key().shape}")
+        print(f"Split RNG shape: {split_rng.shape}")
+        
         x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Reduce the batch size to match mp
         self.init_shmap(rng, x)  # Trigger the initialization process
         print("init shmap done")
@@ -286,7 +284,8 @@ class CausalTransformer:
             return final_state, outputs
 
         generate_fn = nn.compact(generate_sample).apply
-        key = jax.random.PRNGKey(0)
+        # Get a new RNG key from RNGManager
+        key = self.rng_manager.get_current_key()
         aux = jnp.zeros((ctx.shape[0], gen_length), dtype=jnp.uint32)
 
         return generate_fn(self.state["params"], key, jnp.transpose(ctx, (1, 0)), ctx_length, aux)
