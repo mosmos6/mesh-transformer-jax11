@@ -18,6 +18,7 @@ from mesh_transformer.util import to_f32, to_bf16, global_norm
 from mesh_transformer.layers import EmbeddingShard, TransformerLayerShard, RelativePositionEmbs, ProjectionShard
 from mesh_transformer.checkpoint import write_ckpt, read_ckpt
 from mesh_transformer.mesh_context_manager import MeshContextManager  # Import from new file
+from mesh_transformer.rng_manager import RNGManager
 
 
 
@@ -147,7 +148,8 @@ class CausalTransformer:
     def __init__(self, config):
         # Convert non-hashable values in config to hashable types
         self.config = {key: tuple(value) if isinstance(value, (list, np.ndarray, jax.Array)) else value for key, value in config.items()}
-        
+        self.rng_manager = RNGManager(seed=0)
+                     
         optimizer = self.config["optimizer"]
         dp = jax.device_count() // self.config["cores_per_replica"]
         mp = self.config["cores_per_replica"]
