@@ -200,7 +200,7 @@ class CausalTransformer:
 
         # Split the key for the total number of devices
         total_devices = jax.device_count()  # This is 8 for TPU v2-8
-        split_rng = self.rng_manager.split(total_devices)
+        rng = self.rng_manager.split_keys(total_devices)
         print(f"Base RNG shape: {self.rng_manager.get_current_key().shape}")
         print(f"Split RNG shape: {split_rng.shape}")
         
