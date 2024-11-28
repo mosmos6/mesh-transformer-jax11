@@ -28,6 +28,7 @@ class CausalTransformerShard(nn.Module):
     config: dict
     mesh_manager: object
     init_state: jnp.ndarray
+    rng_manager: object  # Add RNGManager as a dependency
 
     def setup(self):
         self.layers = self.config["layers"]
@@ -88,6 +89,10 @@ class CausalTransformerShard(nn.Module):
             x = x + layer(x, attn_bias, layer_index)  # Pass layer_index here
 
         shard_start_index = compute_shard_start_index(self.proj.dim_per_shard)
+
+        # Ensure RNGManager is used for key consistency
+        rng_key = self.rng_manager.get_current_key()
+
         return self.proj.loss(x, target, shard_start_index, z_loss)
 
     def loss(self, ctx, tgt, z_loss=False, mask=0.0):
@@ -119,7 +124,10 @@ class CausalTransformerShard(nn.Module):
             x = x + res
             states.append(layer_state)
 
-        return self.proj(x), (last.astype(jnp.uint32), states, jax.random.PRNGKey(0))
+        # Use RNGManager to get the current RNG key
+        rng_key = self.rng_manager.get_current_key()
+
+        return self.proj(x), (last.astype(jnp.uint32), states, rng_key)
 
     def generate_once(self, new_tok, state, mask=0.0):
         input_len = state[0]["v"].shape[0]
