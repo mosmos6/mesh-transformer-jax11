@@ -172,7 +172,7 @@ class CausalTransformer:
             print(f"State initialized with shape: {self.state.shape}")  # Debug: State shape
             print(f"Shape of x after init_shmap: {self.state.shape}")  # Debug: After shmap
             
-            model = CausalTransformerShard(config=self.config, mesh_manager=mesh_manager, init_state=self.state)
+            model = CausalTransformerShard(config=self.config, mesh_manager=mesh_manager, init_state=self.state, rng_manager=self.rng_manager)
             print("causaltransformershard loaded")
             model_output = model.init(rng, x)
             return model_output, self.state
