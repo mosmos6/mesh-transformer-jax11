@@ -202,7 +202,7 @@ class CausalTransformer:
         total_devices = jax.device_count()  # This is 8 for TPU v2-8
         rng = self.rng_manager.split_keys(total_devices)
         print(f"Base RNG shape: {self.rng_manager.get_current_key().shape}")
-        print(f"Split RNG shape: {split_rng.shape}")
+        print(f"Split RNG shape: {rng.shape}")
         
         x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Reduce the batch size to match mp
         self.init_shmap(rng, x)  # Trigger the initialization process
