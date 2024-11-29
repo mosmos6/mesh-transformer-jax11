@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 
-
 class RNGManager:
     def __init__(self, seed=0):
         """
@@ -14,15 +13,17 @@ class RNGManager:
         """
         Split the current RNG into multiple sub-keys.
         """
-        split_keys = jax.random.split(self.current_rng, num_splits)
-        self.current_rng = split_keys[0]  # Update current_rng to the first subkey
+        # Use self.base_rng to generate the splits
+        split_keys = jax.random.split(self.base_rng, num_splits)
+        # Update the base_rng to the next key in the sequence
+        self.base_rng = split_keys[0]  
         return split_keys
 
     def get_current_key(self):
         """
         Get the current RNG key.
         """
-        return self.current_rng
+        return self.base_rng
 
     def reset(self, seed=None):
         """
