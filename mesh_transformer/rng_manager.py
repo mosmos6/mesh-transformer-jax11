@@ -10,7 +10,7 @@ class RNGManager:
         self.base_rng = jax.random.PRNGKey(seed)
         self.current_rng = self.base_rng
 
-    def split(self, num_splits):
+    def split_keys(self, num_splits):
         """
         Split the current RNG into multiple sub-keys.
         """
