@@ -17,6 +17,7 @@ class RNGManager:
         split_keys = jax.random.split(self.base_rng, num_splits)
         # Update the base_rng to the next key in the sequence
         self.base_rng = split_keys[0]  
+        print(f"split_keys output shape: {split_keys.shape}")  # Debug
         return split_keys
 
     def get_current_key(self):
