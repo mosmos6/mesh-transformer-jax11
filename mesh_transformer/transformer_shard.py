@@ -182,7 +182,7 @@ class CausalTransformer:
         # Apply vmap to batch over the function, then pass to shard_map
         vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
         # Debug: Print the shape of keys passed to vmapped_fn
-        print(f"Keys passed to vmapped_fn: {split_rng.shape}")  # Should be (8, 2)
+        print(f"Keys passed to vmapped_fn: {split_keys.shape}")  # Should be (8, 2)
         
         #self.init_shmap = jax.jit(shard_map(
         #    vmapped_fn,  # Use the vmapped version of the function
@@ -210,7 +210,7 @@ class CausalTransformer:
         
         x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Reduce the batch size to match mp
         self.init_shmap(rng, x)  # Trigger the initialization process
-        print(f"Keys passed to shard_map: {split_rng.shape}")  # Debug
+        print(f"Keys passed to shard_map: {split_keys.shape}")  # Debug
         print("init shmap done")
 
         
