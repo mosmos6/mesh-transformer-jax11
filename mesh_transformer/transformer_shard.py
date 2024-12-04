@@ -182,26 +182,7 @@ class CausalTransformer:
         # Apply vmap to batch over the function, then pass to shard_map
         vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
         
-        
-        #self.init_shmap = jax.jit(shard_map(
-        #    vmapped_fn,  # Use the vmapped version of the function
-        #    in_specs=(None, P('mp', 'dp')),  # Don't shard rng, shard input over mp
-        #    out_specs=(P()),  
-        #    mesh=mesh_manager.get_mesh()
-        #))
-
         print(mesh_manager.get_mesh())
-
-        print(f"Keys passed to shard_map: {rng.shape}")  # Should print (8, 2)
-        self.init_shmap = jax.jit(shard_map(
-            vmapped_fn,  # Use the vmapped version of the function
-            in_specs=(P('core', 'mp'), P('dp')),  # Adjust to the 3D mesh axes
-            out_specs=(P('core', 'mp'), P('dp')),  
-            mesh=mesh_manager.get_mesh()
-        ))
-        
-
-
 
         # Split the key for the total number of devices
         total_devices = jax.device_count()  # This is 8 for TPU v2-8
@@ -210,9 +191,18 @@ class CausalTransformer:
         print(f"Base RNG shape: {self.rng_manager.get_current_key().shape}")
         print(f"Split RNG shape: {rng.shape}")
         
+        # Now print rng shape before shard_map
+        print(f"Keys passed to shard_map: {rng.shape}")  # Debug
+        
+        self.init_shmap = jax.jit(shard_map(
+            vmapped_fn,  # Use the vmapped version of the function
+            in_specs=(P('core', 'mp'), P('dp')),  # Adjust to the 3D mesh axes
+            out_specs=(P('core', 'mp'), P('dp')),  
+            mesh=mesh_manager.get_mesh()
+        ))
+
         x = jnp.zeros((self.config["seq"], 1), dtype=jnp.uint32)  # Reduce the batch size to match mp
         self.init_shmap(rng, x)  # Trigger the initialization process
-        print(f"Keys passed to shard_map: {rng.shape}")  # Debug
         print("init shmap done")
 
         
