@@ -181,7 +181,7 @@ class CausalTransformer:
 
         # Apply vmap to batch over the function, then pass to shard_map
         vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
-        print(f"Shape of RNG keys passed to vmapped_fn: {rng.shape}")  # Should print (8, 2)
+        
         
         #self.init_shmap = jax.jit(shard_map(
         #    vmapped_fn,  # Use the vmapped version of the function
@@ -206,6 +206,7 @@ class CausalTransformer:
         # Split the key for the total number of devices
         total_devices = jax.device_count()  # This is 8 for TPU v2-8
         rng = self.rng_manager.split_keys(total_devices)
+        print(f"Shape of RNG keys before vmapped_fn: {rng.shape}")  # Should print (8, 2)
         print(f"Base RNG shape: {self.rng_manager.get_current_key().shape}")
         print(f"Split RNG shape: {rng.shape}")
         
