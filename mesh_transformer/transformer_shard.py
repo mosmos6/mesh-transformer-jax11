@@ -167,12 +167,6 @@ class CausalTransformer:
         def init_fn(rng, x):
             # Ensure rng is treated as dynamic and not static
             print(f"Shape of sample_input before shmap: {x.shape}")  # Debug: Before shmap
-            
-            # Ensure RNG is reshaped correctly if it arrives with shape (1,)
-            if rng.shape[0] == 1:  # RNG might have been improperly split
-                rng = jax.random.split(rng[0], 2)  # Reshape or expand it to (2,)
-            print(f"RNG shape in init_fn after correction: {rng.shape}")  # Debug: Confirm shape is (2,)
-    
             print(f"RNG shape in init_fn: {rng.shape}")  # Should be (2,)
             state = jax.random.normal(rng, (self.config["layers"], self.config["d_model"], self.config["n_heads"]))
             self.state = state  # Set state manually
@@ -186,7 +180,7 @@ class CausalTransformer:
             return model_output, self.state
 
         # Apply vmap to batch over the function, then pass to shard_map
-        vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
+        vmapped_fn = jax.vmap(init_fn, in_axes=((0, 1, 2), None))  # Vmap over the first axis of rng, but not x
         
         print(mesh_manager.get_mesh())
 
