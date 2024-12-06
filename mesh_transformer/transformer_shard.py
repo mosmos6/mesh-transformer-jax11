@@ -180,7 +180,7 @@ class CausalTransformer:
             return model_output, self.state
 
         # Apply vmap to batch over the function, then pass to shard_map
-        vmapped_fn = jax.vmap(init_fn, in_axes=(None, 0))  # Vmap over the first axis of rng, but not x
+        vmapped_fn = jax.vmap(init_fn, in_axes=(0, None))  # Vmap over the first axis of rng, but not x
         
         print(mesh_manager.get_mesh())
 
