@@ -16,7 +16,7 @@ class RNGManager:
         # Use self.base_rng to generate the splits
         split_keys = jax.random.split(self.base_rng, num_splits)
         # Update the base_rng to the next key in the sequence
-        self.base_rng = split_keys[0]  
+        self.base_rng = jax.random.fold_in(self.base_rng, 1)  # Advance base key  
         print(f"split_keys output shape: {split_keys.shape}")  # Debug
         return split_keys
 
